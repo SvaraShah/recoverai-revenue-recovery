@@ -5,8 +5,8 @@ import app from "./app";
 
 const PORT = process.env.PORT || 3001;
 
-app.listen(PORT, () => {
-  console.log(`🚀 RecoverAI server running on http://localhost:${PORT}`);
-  console.log(`📊 API available at http://localhost:${PORT}/api`);
-  console.log(`💚 Health check at http://localhost:${PORT}/health`);
+app.listen(Number(PORT), "0.0.0.0", () => {
+  console.log(`🚀 RecoverAI server running on port ${PORT}`);
+  console.log(`📊 API available on port ${PORT}/api`);
+  console.log(`💚 Health check on port ${PORT}/health`);
 });

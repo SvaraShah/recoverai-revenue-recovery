@@ -6,7 +6,25 @@ import { errorHandler, notFoundHandler } from "./middleware/errorHandler";
 const app = express();
 
 // Middleware
-app.use(cors());
+// CORS configuration
+const allowedOrigins = [
+  process.env.FRONTEND_URL,
+  "http://localhost:5173",
+].filter(Boolean) as string[];
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes(origin) || process.env.NODE_ENV !== "production") {
+        return callback(null, true);
+      }
+      callback(new Error("Not allowed by CORS"));
+    },
+    credentials: true,
+  })
+);
+
 app.use(express.json());
 
 // API Routes
@@ -14,7 +32,7 @@ app.use("/api", routes);
 
 // Health check
 app.get("/health", (_req, res) => {
-  res.json({ status: "ok", timestamp: new Date().toISOString() });
+  res.json({ status: "ok", service: "RecoverAI API", timestamp: new Date().toISOString() });
 });
 
 // Error handling

@@ -228,6 +228,33 @@ npm run dev
 
 ---
 
+## Production Deployment
+
+### Frontend (Vercel)
+1. In your Vercel Dashboard, select **Add New Project** and import the repository.
+2. Set the **Framework Preset** to `Vite`.
+3. Set the **Root Directory** to `client`.
+4. Configure the following environment variables:
+   - `VITE_API_URL`: The URL of your deployed backend service (e.g. `https://recoverai-backend.onrender.com`).
+5. Click **Deploy**.
+
+### Backend & Database (Render)
+This project includes a [render.yaml](file:///c:/Users/Svara/Downloads/TECH/PROJECTS/RecoverAI/render.yaml) blueprint specification that automatically provisions both the Web Service and PostgreSQL Database:
+1. In your Render Dashboard, navigate to **Blueprints** and click **New Blueprint Instance**.
+2. Select your repository and connect it.
+3. Review the environment variables:
+   - `PORT`: Set to `3001` (default).
+   - `NODE_ENV`: Set to `production`.
+   - `FRONTEND_URL`: Set to your deployed Vercel URL (e.g. `https://recoverai-revenue-recovery.vercel.app`).
+4. Click **Apply** to automatically provision the PostgreSQL database and build/deploy the backend.
+
+Manual database migrations are executed automatically during the build step using:
+```bash
+npx prisma migrate deploy
+```
+
+---
+
 ## Testing & Verification
 The codebase is validated and tested:
 - **Frontend Build**: Verified via Vite compiler.
