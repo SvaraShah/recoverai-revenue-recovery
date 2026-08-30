@@ -1,0 +1,23 @@
+# Node modules
+node_modules/
+client/node_modules/
+server/node_modules/
+
+# Production builds
+client/dist/
+server/dist/
+
+# SQLite lock files
+server/prisma/dev.db-journal
+
+# Environments & secrets
+.env
+.env.local
+server/.env
+
+# Scratch/test scripts
+server/scratch/
+
+# OS files
+.DS_Store
+Thumbs.db

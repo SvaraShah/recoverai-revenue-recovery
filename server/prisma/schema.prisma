@@ -1,0 +1,210 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Models ──────────────────────────────────────────────
+
+model Merchant {
+  id            String        @id @default(uuid())
+  name          String
+  email         String        @unique
+  industry      String
+  monthlyVolume Float         @default(0)
+  currency      String        @default("INR")
+  timezone      String        @default("Asia/Kolkata")
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  transactions  Transaction[]
+  customers     Customer[]
+
+  @@map("merchants")
+}
+
+model Customer {
+  id              String        @id @default(uuid())
+  email           String
+  name            String
+  phone           String?
+  totalTransactions Int         @default(0)
+  successfulPayments Int        @default(0)
+  failedPayments  Int           @default(0)
+  totalSpent      Float         @default(0)
+  lastPaymentDate DateTime?
+  riskScore       Float         @default(0)
+  merchantId      String
+  merchant        Merchant      @relation(fields: [merchantId], references: [id])
+  transactions    Transaction[]
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@map("customers")
+}
+
+model Transaction {
+  id                  String              @id @default(uuid())
+  externalId          String              @unique
+  amount              Float
+  currency            String              @default("INR")
+  status              String              // SUCCESS, FAILED, DECLINED, ABANDONED, PENDING
+  paymentMethod       String              // CREDIT_CARD, DEBIT_CARD, UPI, NET_BANKING, WALLET, EMI
+  gateway             String
+  failureReason       String?             // INSUFFICIENT_FUNDS, CARD_EXPIRED, BANK_TIMEOUT, FRAUD_SUSPECTED, TECHNICAL_ERROR, AUTHENTICATION_FAILED, LIMIT_EXCEEDED, NETWORK_ERROR, INVALID_CARD, PROCESSOR_DECLINED
+  failureMessage      String?
+  cardLast4           String?
+  bankName            String?
+  ipAddress           String?
+  deviceType          String?
+  retryCount          Int                 @default(0)
+  maxRetries          Int                 @default(3)
+  metadata            Json?
+  customerId          String
+  customer            Customer            @relation(fields: [customerId], references: [id])
+  merchantId          String
+  merchant        Merchant            @relation(fields: [merchantId], references: [id])
+  recoveryOpportunity RecoveryOpportunity?
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  @@index([status])
+  @@index([merchantId])
+  @@index([customerId])
+  @@index([createdAt])
+  @@map("transactions")
+}
+
+model RecoveryOpportunity {
+  id                       String               @id @default(uuid())
+  transactionId            String               @unique
+  transaction              Transaction          @relation(fields: [transactionId], references: [id])
+  recoveryScore            Float
+  estimatedRecoverableAmount Float
+  expectedValue            Float                @default(0)
+  priority                 String               @default("MEDIUM") // CRITICAL, HIGH, MEDIUM, LOW
+  recommendedAction        String               // SMART_RETRY, PAYMENT_LINK, EMAIL_REMINDER, SMS_REMINDER, SCHEDULED_RETRY, MANUAL_REVIEW, ESCALATE, OFFER_ALTERNATIVE
+  recommendedChannel       String               @default("EMAIL") // EMAIL, SMS, WHATSAPP, RETRY
+  recommendedDelay         Int                  @default(0) // delay in minutes
+  reasonCodes              String               @default("[]") // JSON string of reasons
+  aiExplanation            String               @default("")
+  failureDiagnosis         String
+  diagnosisDetails         Json?
+  recommendedTiming        DateTime
+  timingRationale          String?
+  status                   String               @default("IDENTIFIED") // IDENTIFIED, ELIGIBLE, RECOMMENDED, PENDING_APPROVAL, EXECUTING, RECOVERED, FAILED, ESCALATED, STOPPED, DISMISSED
+  aiConfidence             Float
+  autoExecute              Boolean              @default(false)
+  executedAt               DateTime?
+  recoveredAmount          Float?
+  attemptCount             Int                  @default(0)
+  lastAttemptAt            DateTime?
+  expiresAt                DateTime
+  campaignOpportunities    CampaignOpportunity[]
+  batchRunId               String?
+  batchRun                 RecoveryBatchRun?    @relation(fields: [batchRunId], references: [id])
+  createdAt                DateTime             @default(now())
+  updatedAt                DateTime             @updatedAt
+
+  @@index([status])
+  @@index([recoveryScore])
+  @@index([recommendedAction])
+  @@map("recovery_opportunities")
+}
+
+model RecoveryCampaign {
+  id              String                @id @default(uuid())
+  name            String
+  description     String?
+  type            String                // SMART_RETRY, EMAIL, SMS, PAYMENT_LINK, MIXED
+  status          String                @default("DRAFT") // DRAFT, ACTIVE, PAUSED, COMPLETED, CANCELLED
+  targetCount     Int                   @default(0)
+  recoveredCount  Int                   @default(0)
+  recoveredAmount Float                 @default(0)
+  totalAtRisk     Float                 @default(0)
+  filters         Json?
+  startDate       DateTime?
+  endDate         DateTime?
+  opportunities   CampaignOpportunity[]
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  @@map("recovery_campaigns")
+}
+
+model CampaignOpportunity {
+  id            String              @id @default(uuid())
+  campaignId    String
+  campaign      RecoveryCampaign    @relation(fields: [campaignId], references: [id])
+  opportunityId String
+  opportunity   RecoveryOpportunity @relation(fields: [opportunityId], references: [id])
+  status        String              @default("IDENTIFIED") // IDENTIFIED, IN_PROGRESS, RECOVERED, FAILED, EXPIRED
+  executedAt    DateTime?
+  result        Json?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  @@unique([campaignId, opportunityId])
+  @@map("campaign_opportunities")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  action     String
+  entityType String
+  entityId   String
+  details    Json?
+  outcome    String?
+  userId     String?
+  ipAddress  String?
+  timestamp  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([timestamp])
+  @@map("audit_logs")
+}
+
+model AIInsight {
+  id          String          @id @default(uuid())
+  type        String          // TREND, ANOMALY, RECOMMENDATION, PATTERN
+  severity    String          // CRITICAL, HIGH, MEDIUM, LOW
+  title       String
+  description String
+  data        Json?
+  actionable  Boolean         @default(true)
+  actionUrl   String?
+  dismissed   Boolean         @default(false)
+  createdAt   DateTime        @default(now())
+  expiresAt   DateTime?
+
+  @@index([type])
+  @@index([severity])
+  @@map("ai_insights")
+}
+
+model RecoveryBatchRun {
+  id                    String                @id @default(uuid())
+  startedAt             DateTime              @default(now())
+  completedAt           DateTime?
+  totalTransactions     Int                   @default(0)
+  eligibleTransactions  Int                   @default(0)
+  attemptedRecoveries   Int                   @default(0)
+  successfulRecoveries  Int                   @default(0)
+  failedRecoveries      Int                   @default(0)
+  stoppedRecoveries     Int                   @default(0)
+  escalatedRecoveries   Int                   @default(0)
+  totalRevenueAtRisk    Float                 @default(0)
+  totalExpectedRecovery Float                 @default(0)
+  totalRecoveredRevenue Float                 @default(0)
+  recoveryRate          Float                 @default(0)
+  averageRecoveryTime   Float                 @default(0)
+  guardrailsEnabled     Boolean               @default(true)
+  approvalRequired      Boolean               @default(true)
+  results               Json?
+  opportunities         RecoveryOpportunity[]
+  createdAt             DateTime              @default(now())
+
+  @@map("recovery_batch_runs")
+}
