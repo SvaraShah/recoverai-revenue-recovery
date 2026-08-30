@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, Request, Response } from "express";
 import { asyncHandler } from "../middleware/errorHandler";
 import { dashboardService } from "../services/dashboardService";
 import { transactionService } from "../services/transactionService";
@@ -265,11 +265,11 @@ export let appSettings = {
   confidenceThreshold: 0.7,
 };
 
-router.get("/settings", (_req, res) => {
+router.get("/settings", (_req: Request, res: Response) => {
   res.json(appSettings);
 });
 
-router.patch("/settings", (req, res) => {
+router.patch("/settings", (req: Request, res: Response) => {
   appSettings = { ...appSettings, ...req.body };
   res.json(appSettings);
 });
