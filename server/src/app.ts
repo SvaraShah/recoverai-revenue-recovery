@@ -8,9 +8,10 @@ const app = express();
 // Middleware
 // CORS configuration
 const allowedOrigins = [
-  process.env.FRONTEND_URL,
+  ...(process.env.FRONTEND_URL ? process.env.FRONTEND_URL.split(",").map((u) => u.trim()) : []),
+  "https://recoverai-revenue-recovery-five.vercel.app",
   "http://localhost:5173",
-].filter(Boolean) as string[];
+].filter(Boolean);
 
 app.use(
   cors({
