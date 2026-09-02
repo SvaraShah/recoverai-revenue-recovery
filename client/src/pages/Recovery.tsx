@@ -8,7 +8,7 @@ import {
 import { cn, formatCurrency, getStatusColor, getScoreColor, truncateId } from "@/lib/utils";
 import { useFetch } from "@/hooks/useFetch";
 import { recoveryApi } from "@/lib/api";
-import type { PaginatedResponse, RecoveryOpportunity } from "@/types";
+import type { PaginatedResponse, RecoveryOpportunity, BatchRunSummary } from "@/types";
 import AIAnalysisModal from "@/components/AIAnalysisModal";
 
 export default function RecoveryPage() {
@@ -18,6 +18,7 @@ export default function RecoveryPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [executingId, setExecutingId] = useState<string | null>(null);
   const [simulating, setSimulating] = useState(false);
+  const [batchSummary, setBatchSummary] = useState<BatchRunSummary | null>(null);
 
   const { data: response, loading, refetch } = useFetch<PaginatedResponse<RecoveryOpportunity>>(
     () => recoveryApi.getAll(statusFilter !== "all" ? { status: statusFilter } : undefined),
@@ -41,7 +42,10 @@ export default function RecoveryPage() {
   const handleRunBatchSimulation = async () => {
     setSimulating(true);
     try {
-      await recoveryApi.createBatchRun({ batchSize: 50, guardrailsEnabled: true, approvalRequired: true });
+      const res = await recoveryApi.createBatchRun({ batchSize: 50, guardrailsEnabled: true, approvalRequired: true });
+      if (res.summary) {
+        setBatchSummary(res.summary);
+      }
       refetch();
     } catch {
       // handle error
@@ -87,6 +91,78 @@ export default function RecoveryPage() {
           </button>
         </div>
       </div>
+
+      {/* Batch Run Results Summary Banner */}
+      {batchSummary && (
+        <div className="rounded-2xl border border-indigo-200 bg-gradient-to-r from-indigo-50/90 via-purple-50/70 to-white p-5 shadow-xs space-y-3">
+          <div className="flex items-center justify-between border-b border-indigo-100 pb-3">
+            <div className="flex items-center gap-2">
+              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-600 text-white shadow-2xs">
+                <Zap className="h-4 w-4 fill-white" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-extrabold text-slate-900">Batch Run Results Summary</h3>
+                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded-full">
+                    <CheckCircle2 className="h-3 w-3 text-emerald-600" /> Complete ({batchSummary.executionTimeMs}ms)
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-500 font-medium">Measured Money Recovered Across Batch Execution</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setBatchSummary(null)}
+              className="text-xs font-bold text-slate-400 hover:text-slate-600 px-2 py-1 rounded-lg hover:bg-white/60"
+            >
+              Dismiss
+            </button>
+          </div>
+
+          {/* Metric Grid */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="rounded-xl border border-slate-200/80 bg-white p-3 shadow-2xs">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Processed</span>
+              <p className="text-lg font-black text-slate-900 tabular-nums">{batchSummary.totalTransactionsProcessed} transactions</p>
+            </div>
+
+            <div className="rounded-xl border border-slate-200/80 bg-white p-3 shadow-2xs">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Revenue at Risk</span>
+              <p className="text-lg font-black text-slate-900 tabular-nums">{formatCurrency(batchSummary.totalAtRiskAmount)}</p>
+            </div>
+
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-3 shadow-2xs">
+              <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider block">Measured Recovered</span>
+              <p className="text-lg font-black text-emerald-700 tabular-nums">{formatCurrency(batchSummary.totalRecoveredAmount)}</p>
+            </div>
+
+            <div className="rounded-xl border border-indigo-200 bg-indigo-50/50 p-3 shadow-2xs">
+              <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider block">Recovery Rate</span>
+              <p className="text-lg font-black text-indigo-700 tabular-nums">{batchSummary.recoveryRatePercent}%</p>
+            </div>
+          </div>
+
+          {/* Guardrail Breakdown */}
+          {batchSummary.stoppedByGuardrail && batchSummary.stoppedByGuardrail.length > 0 && (
+            <div className="pt-2 border-t border-slate-200/60 flex flex-wrap items-center gap-2 text-xs">
+              <span className="text-[11px] font-bold text-slate-500 flex items-center gap-1">
+                <ShieldAlert className="h-3.5 w-3.5 text-amber-600" /> Stopped by Guardrails:
+              </span>
+              {batchSummary.stoppedByGuardrail.map((item) => (
+                <span key={item.rule} className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-700 bg-white border border-slate-200 px-2 py-0.5 rounded-lg shadow-2xs">
+                  <span>{item.rule}:</span>
+                  <strong className="text-indigo-600">{item.count}</strong>
+                </span>
+              ))}
+              {batchSummary.escalatedToApproval > 0 && (
+                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-lg shadow-2xs">
+                  <span>Pending Approval:</span>
+                  <strong>{batchSummary.escalatedToApproval}</strong>
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Control Strip */}
       <div className="flex flex-wrap items-center justify-between gap-3">

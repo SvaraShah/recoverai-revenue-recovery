@@ -212,3 +212,36 @@ export interface AnalyticsData {
   recoveryByAction: { action: string; count: number; amount: number; successRate: number }[];
   topCustomers: { customer: Customer; recoverableAmount: number; recoveryScore: number }[];
 }
+
+export interface GuardrailBreakdownItem {
+  rule: string;
+  count: number;
+}
+
+export interface BatchRunSummary {
+  totalTransactionsProcessed: number;
+  totalAtRiskAmount: number;
+  totalRecoveredAmount: number;
+  recoveryRatePercent: number;
+  stoppedByGuardrail: GuardrailBreakdownItem[];
+  escalatedToApproval: number;
+  executionTimeMs: number;
+}
+
+export interface BatchRunResult {
+  id: string;
+  totalTransactions: number;
+  eligibleTransactions: number;
+  attemptedRecoveries: number;
+  successfulRecoveries: number;
+  failedRecoveries: number;
+  stoppedRecoveries: number;
+  escalatedRecoveries: number;
+  totalRevenueAtRisk: number;
+  totalExpectedRecovery: number;
+  totalRecoveredRevenue: number;
+  recoveryRate: number;
+  guardrailsEnabled: boolean;
+  approvalRequired: boolean;
+  summary?: BatchRunSummary;
+}

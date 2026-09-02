@@ -91,7 +91,7 @@ export const recoveryApi = {
   getBatchRuns: () => request<any[]>("/recovery/batch-runs"),
   getBatchRunById: (id: string) => request<any>(`/recovery/batch-runs/${id}`),
   createBatchRun: (data: { batchSize: number; guardrailsEnabled: boolean; approvalRequired: boolean }) =>
-    request<any>("/recovery/batch-run", {
+    request<import("@/types").BatchRunResult>("/recovery/batch-run", {
       method: "POST",
       body: JSON.stringify(data),
     }),

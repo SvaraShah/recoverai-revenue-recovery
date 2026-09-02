@@ -524,6 +524,15 @@ export const recoveryService = {
   },
 
   async createBatchRun(config: { batchSize: number; guardrailsEnabled: boolean; approvalRequired: boolean }) {
+    const startTime = Date.now();
+    const guardrailCounts: Record<string, number> = {
+      "Fraud / Invalid Card": 0,
+      "Max Retry Attempts": 0,
+      "Customer Frequency Limit": 0,
+      "High Value (>₹25k) Approval": 0,
+      "Low Confidence (<50%)": 0,
+    };
+
     // Get opportunities that are in identified/pending/recommended states
     const activeOpps = await prisma.recoveryOpportunity.findMany({
       where: {
@@ -614,30 +623,35 @@ export const recoveryService = {
           targetState = "STOPPED";
           stopReason = `Guardrail Blocked: Permanently invalid failure (${fullOpp.transaction.failureReason})`;
           stoppedRecoveries++;
+          guardrailCounts["Fraud / Invalid Card"]++;
         }
         // RULE 1: Max retry check
         else if (fullOpp.attemptCount >= appSettings.maxRetryAttempts) {
           targetState = "STOPPED";
           stopReason = `Guardrail Blocked: Retry attempts exceeded (${fullOpp.attemptCount}/${appSettings.maxRetryAttempts})`;
           stoppedRecoveries++;
+          guardrailCounts["Max Retry Attempts"]++;
         }
         // RULE 5: outreach threshold
         else if (fullOpp.transaction.customer.failedPayments >= 6) {
           targetState = "STOPPED";
           stopReason = `Guardrail Blocked: Customer frequency limit exceeded`;
           stoppedRecoveries++;
+          guardrailCounts["Customer Frequency Limit"]++;
         }
         // RULE 3: High value merchant approval check
         else if (config.approvalRequired && fullOpp.transaction.amount > 25000) {
           targetState = "PENDING_APPROVAL";
           escalateReason = `Guardrail Check: High-value transaction (₹${fullOpp.transaction.amount}) requires approval`;
           escalatedRecoveries++;
+          guardrailCounts["High Value (>₹25k) Approval"]++;
         }
         // RULE 4: confidence check
         else if (fullOpp.aiConfidence < (appSettings.confidenceThreshold * 100)) {
           targetState = "PENDING_APPROVAL";
           escalateReason = `Guardrail Check: Confidence (${fullOpp.aiConfidence}%) below threshold`;
           escalatedRecoveries++;
+          guardrailCounts["Low Confidence (<50%)"]++;
         } else {
           eligibleTransactions++;
           checkAction = true;
@@ -773,7 +787,24 @@ export const recoveryService = {
     // Clear insight cache after batch run so insights refresh
     clearInsightCache();
 
-    return updatedBatchRun;
+    const executionTimeMs = Date.now() - startTime;
+
+    const summary = {
+      totalTransactionsProcessed: opportunitiesToProcess.length,
+      totalAtRiskAmount: Math.round(totalRevenueAtRisk),
+      totalRecoveredAmount: Math.round(totalRecoveredRevenue),
+      recoveryRatePercent: recoveryRate,
+      stoppedByGuardrail: Object.entries(guardrailCounts)
+        .filter(([_, count]) => count > 0)
+        .map(([rule, count]) => ({ rule, count })),
+      escalatedToApproval: escalatedRecoveries,
+      executionTimeMs,
+    };
+
+    return {
+      ...updatedBatchRun,
+      summary,
+    };
   },
 
   async getAuditLogs() {
