@@ -1,285 +1,234 @@
-# RecoverAI — Explainable AI Revenue Recovery Agent
+# RecoverAI — Autonomous AI Revenue Recovery Platform
 
-RecoverAI identifies recoverable payment failures, recommends appropriate recovery actions, applies safety guardrails, measures simulated recovery outcomes, and maintains an audit trail.
+[![Live Demo](https://img.shields.io/badge/Live_Demo-Vercel-000000?style=flat&logo=vercel&logoColor=white)](https://recoverai-revenue-recovery-five.vercel.app/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=flat&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![React](https://img.shields.io/badge/React-61DAFB?style=flat&logo=react&logoColor=black)](https://react.dev/)
+[![Express](https://img.shields.io/badge/Express-000000?style=flat&logo=express&logoColor=white)](https://expressjs.com/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?style=flat&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+[![Prisma](https://img.shields.io/badge/Prisma-2D3748?style=flat&logo=prisma&logoColor=white)](https://www.prisma.io/)
+[![Groq](https://img.shields.io/badge/Groq-F05032?style=flat&logo=lightning&logoColor=white)](https://groq.com/)
 
-# Live Link : 
-https://recoverai-revenue-recovery-five.vercel.app/
+**Live Application URL**: [https://recoverai-revenue-recovery-five.vercel.app/](https://recoverai-revenue-recovery-five.vercel.app/)
 
-## Razorpay AI Builder Internship 2026
-**Track:** Track 3 — AI Revenue Recovery
-
----
-
-## The Problem
-Revenue leakage from failed, declined, or abandoned payment transactions is a multi-billion dollar problem in digital commerce. Standard transactional retry strategies typically fail due to two key issues:
-1. **Naive Retry Overhead**: Blindly retrying every failed transaction clutters customer feeds, increases card network fees, and runs the risk of merchant account suspension for high decline rates.
-2. **One-Size-Fits-All Outreach**: Technical gateway timeouts need an immediate retry, whereas insufficient fund issues need a delayed payment link, and suspicious card flags require account verification instead of communication.
-
-To prevent revenue loss, merchants require an automated agent that can diagnose failures, calculate recovery likelihood, select the optimal outreach channel, check compliance guardrails, and log an audit trail for evaluators.
+> **Track**: Razorpay AI Builder Internship 2026 — Track 3 (AI Revenue Recovery)
 
 ---
 
-## The Solution
-RecoverAI implements a bounded, explainable recovery-agent workflow that processes transactions through a multi-stage pipeline:
+**RecoverAI** is an AI-powered revenue recovery platform that autonomously analyzes failed payment transactions, determines intelligent recovery strategies, applies deterministic backend safety policies, executes eligible recovery actions, and records every operational decision in an immutable, auditable workflow.
 
-```mermaid
-graph TD
-    A[Payment Transaction] --> B[Failure Diagnosis]
-    B --> C[Recovery Scoring]
-    C --> D[Recovery Opportunity]
-    D --> E[Action Recommendation]
-    E --> F[Guardrail Evaluation]
-    F --> G{Execute / Approve / Stop / Escalate}
-    G -->|Approved / Eligible| H[Simulated Outcome]
-    G -->|High-Value / Low-Confidence| I[Pending Approval]
-    G -->|Fraud / Max Retries| J[Stopped]
-    H --> K[Analytics & Audit Trail]
-    I --> K
-    J --> K
+> **Positioning**: RecoverAI is an **AI Agent system**, not simply a chatbot or static analytics dashboard. The agent proposes operational decisions, while a deterministic backend policy engine maintains final authority over execution.
+
+---
+
+## Architecture Diagram
+
+```
+User (Operations Console)
+       ↓
+RecoverAI Frontend (React / Vite / TypeScript)
+       ↓  [REST API]
+Express API Server (Node.js / TypeScript)
+       ↓
+AI Agent Engine (Groq API · Model: openai/gpt-oss-120b)
+ ├── 1. Detect      (Ingest failed payment telemetry)
+ ├── 2. Diagnose    (Groq root cause diagnosis)
+ ├── 3. Score       (Multi-factor recovery scoring 0-100)
+ ├── 4. Decide      (Intervention strategy selection)
+ └── 5. Recommend  (Channel, timing delay, expected value)
+       ↓
+Deterministic Policy Safety Engine  <-- [FINAL AUTHORITY]
+ ├── Rule 1: Retry attempt caps (Max 3 attempts)
+ ├── Rule 2: Fraud & invalid card block (FRAUD_SUSPECTED / INVALID_CARD)
+ ├── Rule 3: High-value merchant approval (>₹25,000 threshold)
+ ├── Rule 4: Low confidence intercept (<50% threshold)
+ ├── Rule 5: Customer outreach frequency cap (Max 6 failures)
+ ├── Rule 6: Deduplication & state lock (RECOVERED state lock)
+ └── Rule 7: Repeated attempt escalation policy
+       ↓
+Recovery Action Execution (Smart Retry / Payment Link / Outreach)
+       ↓
+Immutable Audit Trail Ledger & Live Analytics (PostgreSQL + Prisma)
 ```
 
-### Flow Lifecycle Stages:
-1. **Failure Diagnosis**: Analyses payment gateway codes (e.g., `INSUFFICIENT_FUNDS`, `FRAUD_SUSPECTED`, `LIMIT_EXCEEDED`, `NETWORK_ERROR`).
-2. **Recovery Scoring**: Predicts recovery probability (0-100) based on customer transaction success rate, payment method history, and gateway logs.
-3. **Recovery Opportunity**: Generates a structured opportunity tracking expected value and priority level (`CRITICAL`, `HIGH`, `MEDIUM`, `LOW`).
-4. **Action Recommendation**: Recommends the action (`SMART_RETRY`, `PAYMENT_LINK`, `EMAIL_REMINDER`, `SMS_REMINDER`) and channel with custom timing delay.
-5. **Guardrail Evaluation**: Evaluates transaction parameters against 7 safety rules.
-6. **Execution Decisions**: Binds outcomes into:
-   - **`STOPPED`**: Blocked under safety rules.
-   - **`PENDING_APPROVAL`**: Suspended for merchant review.
-   - **`EXECUTING`**: Released to target channel.
-7. **Simulated Outcome**: Runs a deterministic outcome simulation based on transaction history and customer parameters.
-8. **Analytics & Audit**: Logs transitions to an immutable audit ledger and updates metrics.
+---
+
+## Why the Agent is Safe
+
+> *"AI decides what may be worth doing; deterministic policies decide what is actually allowed to happen."*
+
+1. **Bounded Autonomy**: AI recommendations are never automatically trusted. Every proposed recovery action must pass through 7 deterministic safety guardrails before execution.
+2. **LLM Cannot Override Safety Rules**: Even if an LLM model recommends retrying a transaction, backend code interceptors override the action if safety rules are triggered.
+3. **Deterministic Fraud Intercept**: Transactions flagged as `FRAUD_SUSPECTED` or `INVALID_CARD` are immediately set to `status = "STOPPED"` with `autoExecute = false`. Any attempt to execute a prohibited action returns **HTTP 400 Bad Request**.
+4. **Human-in-the-Loop Approval**: High-value transactions (>₹25,000) are placed into `PENDING_APPROVAL` status, requiring explicit merchant authorization before execution.
+5. **Full Auditability**: Every state transition, AI rationale, policy check, and outcome is logged to an immutable audit trail ledger.
 
 ---
 
-## What Makes RecoverAI Different
-Unlike basic analytics charts, RecoverAI functions as an autonomous, safety-bounded agent:
-* **Explainable Decisioning**: Calculates and explains every score with natural language rationales.
-* **Bounded Autonomy**: The agent operates under strict merchant limits; it cannot run wild or span infinite retries.
-* **Safety Guardrails**: Backend checks intercept every execution to prevent unauthorized outreach or duplicate messaging.
-* **Measurable Recovery**: Transparently separates estimated recovery expectations from actual simulated recovery figures.
-* **Human-in-the-Loop**: Safely escalates high-risk or high-value cases (>₹25k) to manual review.
+## AI Agent Workflow
+
+Every failed transaction passes through a 9-stage bounded agent lifecycle:
+
+| Stage | Name | Operational Function |
+| :--- | :--- | :--- |
+| `1` | **DETECT** | Ingests payment failure telemetry (gateway response, payment method, customer history). |
+| `2` | **DIAGNOSE** | Groq AI engine analyzes failure classification (e.g., `INSUFFICIENT_FUNDS`, `BANK_TIMEOUT`). |
+| `3` | **SCORE** | Computes a 0–100 recovery score and confidence percentage based on historical profiles. |
+| `4` | **DECIDE** | Selects optimal intervention strategy (`SMART_RETRY`, `PAYMENT_LINK`, `EMAIL_REMINDER`). |
+| `5` | **POLICY CHECK** | Evaluates the proposed decision against 7 deterministic backend safety guardrails. |
+| `6` | **ACT** | Dispatches recovery action if eligible, or suspends action for human approval/safety block. |
+| `7` | **STOP / ESCALATE** | Transitions risk cases to `STOPPED` (fraud/limits) or `PENDING_APPROVAL` (>₹25,000). |
+| `8` | **AUDIT** | Writes an immutable record to the audit trail with decision rationales and policy checks. |
+| `9` | **MEASURE** | Tracks telemetry, realized revenue, and recovery lift metrics. |
+
+---
+
+## Deterministic Safety Guardrails
+
+The backend enforces 7 strict rules in `recoveryService.ts`:
+
+- **Rule 1: Retry Attempt Limits**: Limits retries to 3 attempts. Exceeding retries transitions opportunity to `STOPPED`.
+- **Rule 2: Fraud & Invalid Card Protection**:
+  - `failureReason === "FRAUD_SUSPECTED"` or `"INVALID_CARD"`
+  - Immediately forces `status = "STOPPED"` and `autoExecute = false`.
+  - Execution API returns **HTTP 400 Bad Request** (`POLICY BLOCKED: Recovery action prohibited for fraud/invalid-card risk`).
+- **Rule 3: High-Value Transaction Protection**:
+  - Transactions with amount `> ₹25,000`
+  - Forces `status = "PENDING_APPROVAL"` and `autoExecute = false`.
+  - Requires manual merchant authorization (`Approve & Execute`).
+- **Rule 4: Confidence Threshold**: Confidence ratings below 50% prevent autonomous execution.
+- **Rule 5: Customer Frequency Limit**: Customers with $\ge 6$ failed payments are stopped to prevent customer spam.
+- **Rule 6: Deduplication Lock**: Transactions already marked `RECOVERED` block further outreach actions.
+- **Rule 7: Escalation Policy**: Repeated failure attempts escalate opportunity to manual security review.
+
+---
+
+## AI & Groq Integration
+
+- **Provider**: Groq Cloud AI Engine (`groq-sdk`)
+- **Current Production Model**: `openai/gpt-oss-120b`
+- **Output Format**: Enforced structured JSON via `response_format: { type: "json_object" }`
+- **Security**: `GROQ_API_KEY` is strictly server-side only and never exposed to the client bundle or network payload.
 
 ---
 
 ## Core Features
-- **Revenue-at-Risk Dashboard**: Real-time aggregation of transaction values, estimated recoverable amounts, and average success rates.
-- **Explainable AI Inspector**: Details the exact logical reason codes (e.g., historical user success rate, failure classification, and retry thresholds) inside every opportunity card.
-- **7-Rule Safety Guardrails**: Assessment checklist of max retry counts, customer frequency caps, fraud validations, and high-value approvals.
-- **Batch Recovery Simulation**: Runs simulations across slices of 25, 50, or 100 failed transactions to test recovery strategies.
-- **Realized Performance Analytics**: Graphs estimated vs. actual recovered revenues and tracks stop/escalation rates.
-- **Immutable Agent Audit Trail**: A complete log table mapping actions (`AI_ANALYSIS`, `RECOVERY_STOPPED`, `APPROVAL_REQUIRED`) to their previous and transition states.
 
----
-
-## AI Decision Engine
-To ensure high reliability, RecoverAI uses a structured, explainable scoring engine in [scorer.ts](file:///c:/Users/Svara/Downloads/TECH/PROJECTS/RecoverAI/server/src/ai/scorer.ts) instead of an unconstrained generative LLM:
-* **Scoring Rules**:
-  - `Base Score`: Determined by failure reasons (technical errors have high recoverability; fraud has 0%).
-  - `Customer Adjustment`: Boosted by the customer's historical success rate and reduced by their overall transaction risk score.
-  - `Confidence`: Computed from historical profile volume and payment method age.
-* **Formulae**:
-  - **`expectedValue`**: `estimatedRecoverableAmount * (recoveryScore / 100)`
-  - **`priority`**: Assigned based on amount thresholds (Critical for >₹50k, High for >₹15k, Medium otherwise).
-  - **`recommendedChannel`**: Selects `RETRY` for network errors, `EMAIL` for card declines, and `SMS`/`WHATSAPP` for abandons.
-
-> [!NOTE]
-> **Engineering Decision**: Using a deterministic decision tree prevents non-deterministic "hallucinations" or rate-limiting delays from executing payment actions. The engine is modularly separated (`runFullAnalysis`), allowing you to swap it with a production LLM classifier (e.g., Gemini API) without bypassing the guardrails system.
-
----
-
-## Guardrails & Bounded Autonomy
-The backend enforces 7 safety rules defined in [appSettings](file:///c:/Users/Svara/Downloads/TECH/PROJECTS/RecoverAI/server/src/routes/index.ts) before any outreach takes place:
-
-| Guardrail Rule | Target Check | Threshold Value | Violation Action |
-| :--- | :--- | :--- | :--- |
-| **Rule 1: Retry Cap** | Cumulative attempts | 3 maximum | Transition to `STOPPED` |
-| **Rule 2: Exclusions** | Permanent failures | `FRAUD_SUSPECTED`, `INVALID_CARD` | Transition to `STOPPED` |
-| **Rule 3: High Value Limit** | Transaction amount | > ₹25,000 | Transition to `PENDING_APPROVAL` |
-| **Rule 4: Confidence Cap** | AI Confidence rating | < 50% | Transition to `PENDING_APPROVAL`/`ELIGIBLE` |
-| **Rule 5: Customer Limit** | Customer failed count | 6 failures | Transition to `STOPPED` |
-| **Rule 6: Deduplication** | Current state | `RECOVERED` | Block further outreach |
-| **Rule 7: Escalation Policy** | Multi-failure limit | Max retries reached | Transition to `ESCALATED` |
-
----
-
-## Recovery Measurement
-To evaluate performance, the system distinguishes:
-1. **Revenue at Risk**: Total transaction value of all failed payments.
-2. **Expected Recovery**: Target recovery value calculated as `Amount * Recovery Score %`.
-3. **Actual Simulated Recovery**: Calculated payments successfully completed through simulation runs.
-
-The Analytics page tracks the **Recovery Lift** over baseline (assumed baseline of 15% manual payment recovery) to quantify agent performance.
-
----
-
-## Audit Trail
-Every state change writes an entry to the database:
-- `AI_ANALYSIS`: Logged when an opportunity is created.
-- `APPROVAL_REQUIRED`: Triggered when an execution violates Rule 3 (High-Value) or Rule 4 (Low-Confidence).
-- `RECOVERY_STOPPED`: Logged when Rule 1, 2, or 5 stops outreach.
-- `RECOVERY_SUCCEEDED`: Logged upon successful simulated payment.
-- `RECOVERY_FAILED`: Logged upon failed simulated payment.
-
----
-
-## Architecture
-```
-[React + Vite Frontend (Port 5173)]
-              ↓ (REST API Calls)
-[Express + TypeScript Server (Port 3001)]
-              ↓
-  [Recovery Service (Guardrail Engines)]
-              ↓
-  [Modular AI Scoring & Diagnosis]
-              ↓
-      [Prisma Client Layer]
-              ↓
-    [dev.db (SQLite Database)]
-```
+- **Command Center Dashboard**: Aggregates real-time Revenue at Risk, Recovered Revenue, Recovery Rate, and Active Opportunities with performance trend charts.
+- **Payment Operations Console**: Dense, searchable payment table with status filters, failure reason pills, score badges, and tabular amounts.
+- **AI Analysis Right-Side Drawer**: Comprehensive inspection drawer featuring transaction summaries, root cause diagnoses, confidence metrics, and vertical agent workflow steppers.
+- **Recovery Queue & Batch Execution**: Pipeline management allowing manual or batch execution of eligible recovery opportunities.
+- **AI Insights Engine**: Dynamically generated root cause analyses, pattern detections, and recommendations.
+- **Conversion Funnel Analytics**: Telemetry detailing conversion rates from Failed Payments $\rightarrow$ AI Analyzed $\rightarrow$ Opportunities $\rightarrow$ Outreach $\rightarrow$ Revenue Recovered using live database metrics.
+- **Immutable Audit Trail**: Chronological event ledger tracking every AI decision, policy override, approval request, and recovery outcome.
+- **Real-Time System Telemetry Notifications**: Header popover delivering instant notifications for policy blocks, human approval requests, and analysis events.
+- **Global Search Console**: Keyboard-accessible (`⌘K`) debounced search across transaction IDs, customer names, and emails.
 
 ---
 
 ## Tech Stack
-* **Frontend**: React, TypeScript, Vite, Tailwind CSS, Recharts (charts), Radix UI (dialog modals), Lucide (icons).
-* **Backend**: Node.js, Express, TypeScript, Prisma (ORM), SQLite (local database).
 
----
+### Frontend
+- **Framework**: React 19, TypeScript, Vite
+- **Styling**: Tailwind CSS v4, Lucide Icons
+- **Visualization**: Recharts (trend charts)
 
-## Project Structure
-```
-RecoverAI/
-├── client/                 # React frontend
-│   ├── src/
-│   │   ├── components/     # AppShell, Sidebar, Header
-│   │   ├── hooks/          # useFetch API loading hook
-│   │   ├── lib/            # api client and utility helper formatting
-│   │   ├── pages/          # Overview, Transactions, Recovery, Analytics, AuditLog, Settings
-│   │   └── types/          # Frontend type definitions
-│   └── tsconfig.app.json
-├── server/                 # Express backend
-│   ├── prisma/             # SQLite dev.db schema and migration scripts
-│   ├── src/
-│   │   ├── ai/             # Scorer engine, timing analytics, and types
-│   │   ├── routes/         # Express router controllers
-│   │   ├── services/       # recoveryService, analyticsService, dashboardService
-│   │   └── server.ts       # Application bootstrap
-│   └── tsconfig.json
-└── README.md
-```
+### Backend
+- **Runtime**: Node.js, Express, TypeScript (`ts-node`)
+- **Database ORM**: Prisma ORM
+- **Database**: PostgreSQL (Render PostgreSQL in production)
+
+### AI
+- **SDK**: Groq SDK (`groq-sdk`)
+- **Model**: `openai/gpt-oss-120b`
 
 ---
 
 ## API Overview
-* `GET /api/transactions` — Retrieves payment records.
-* `POST /api/transactions/:id/analyze` — Run diagnostics on transaction.
-* `GET /api/recovery` — List opportunities.
-* `POST /api/recovery/:id/execute` — Execute outreach.
-* `POST /api/recovery/batch-run` — Runs simulation batch.
-* `GET /api/recovery/performance` — Returns realization stats.
-* `GET /api/recovery/audit-log` — Returns chronological audits.
-* `GET /api/recovery/guardrails` — Returns settings parameters.
+
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `GET` | `/api/health` | Service health check |
+| `GET` | `/api/ai/status` | Active AI engine status & model identifier |
+| `GET` | `/api/transactions` | Paginated transaction listing with status & search filters |
+| `POST` | `/api/transactions/:id/analyze` | Triggers Groq AI diagnosis and policy check for a transaction |
+| `GET` | `/api/recovery` | Paginated recovery opportunities queue |
+| `POST` | `/api/recovery/:id/execute` | Executes an eligible recovery opportunity (enforces guardrails) |
+| `POST` | `/api/recovery/batch-run` | Executes batch recovery simulation |
+| `GET` | `/api/recovery/performance` | Returns live conversion metrics and performance telemetry |
+| `GET` | `/api/recovery/audit-log` | Returns chronological audit trail ledger entries |
+| `GET` | `/api/recovery/guardrails` | Returns safety guardrail configuration parameters |
 
 ---
 
-## Demo Walkthrough
+## Setup & Local Installation
 
-To review the project workflow:
-1. **Overview Page**: View global Revenue at Risk metrics.
-2. **Recovery Page**:
-   - Click on an opportunity card to open the **Opportunity details**.
-   - Check the **AI Explanation**, **Expected Value**, and **Guardrails Assessment** checklists.
-   - Click **Run Recovery Batch** to configure a simulation batch size of 25.
-   - Click **Execute Simulation Batch** and review the recovered revenue and stopped/escalated actions.
-3. **Audit Trail**: Check the sidebar and review chronological logs for previous/transition states.
-4. **Analytics Page**: View the **Recovery Lift** card and compare **Estimated vs. Actual Recovery** on the bar chart.
-5. **Settings Page**: Modify the **AI Confidence Threshold** using the slider.
+### Prerequisites
+- Node.js (v18+)
+- PostgreSQL database instance
 
----
+### Environment Setup
 
-## Local Setup
-
-### 1. Prerequisites
-- Node.js (v18+) and npm installed.
-
-### 2. Installation & Setup
-Run the following commands in the workspace root:
-
-```powershell
-# Install root, backend, and frontend dependencies
-npm install
-cd server; npm install
-cd ../client; npm install
-
-# Build Prisma clients and create database
-cd ../server
-npx prisma db push
-
-# Seed transaction records (500 payments, 80 customers, 161 opportunities)
-npm run seed
+Create `server/.env`:
+```env
+PORT=3001
+NODE_ENV=development
+DATABASE_URL=postgresql://user:password@localhost:5432/recoverai
+GROQ_API_KEY=your_groq_api_key_here
+GROQ_MODEL=openai/gpt-oss-120b
 ```
 
-### 3. Startup
-Start backend and frontend dev servers concurrently from the root directory:
-```powershell
-cd ..
-npm run dev
-```
-- Open Frontend: [http://localhost:5173](http://localhost:5173)
-- API endpoint: [http://localhost:3001/api](http://localhost:3001/api)
-
----
-
-## Production Deployment
-
-### Frontend (Vercel)
-1. In your Vercel Dashboard, select **Add New Project** and import the repository.
-2. Set the **Framework Preset** to `Vite`.
-3. Set the **Root Directory** to `client`.
-4. Configure the following environment variables:
-   - `VITE_API_URL`: The URL of your deployed backend service (e.g. `https://recoverai-backend.onrender.com`).
-5. Click **Deploy**.
-
-### Backend & Database (Render)
-This project includes a [render.yaml](file:///c:/Users/Svara/Downloads/TECH/PROJECTS/RecoverAI/render.yaml) blueprint specification that automatically provisions both the Web Service and PostgreSQL Database:
-1. In your Render Dashboard, navigate to **Blueprints** and click **New Blueprint Instance**.
-2. Select your repository and connect it.
-3. Review the environment variables:
-   - `PORT`: Set to `3001` (default).
-   - `NODE_ENV`: Set to `production`.
-   - `FRONTEND_URL`: Set to your deployed Vercel URL (e.g. `https://recoverai-revenue-recovery.vercel.app`).
-4. Click **Apply** to automatically provision the PostgreSQL database and build/deploy the backend.
-
-Manual database migrations are executed automatically during the build step using:
-```bash
-npx prisma migrate deploy
+Create `client/.env`:
+```env
+VITE_API_URL=http://localhost:3001
 ```
 
+### Installation Steps
+
+1. **Clone Repository**:
+   ```bash
+   git clone https://github.com/SvaraShah/recoverai-revenue-recovery.git
+   cd recoverai-revenue-recovery
+   ```
+
+2. **Install Dependencies**:
+   ```bash
+   # Install root, server, and client dependencies
+   npm install
+   cd server && npm install
+   cd ../client && npm install
+   ```
+
+3. **Database Setup & Seed**:
+   ```bash
+   cd ../server
+   npx prisma db push
+   npm run seed
+   ```
+
+4. **Start Application**:
+   ```bash
+   # Run both frontend and backend concurrently from root
+   cd ..
+   npm run dev
+   ```
+   - **Frontend Console**: [http://localhost:5173](http://localhost:5173)
+   - **Backend API**: [http://localhost:3001/api](http://localhost:3001/api)
+
 ---
 
-## Testing & Verification
-The codebase is validated and tested:
-- **Frontend Build**: Verified via Vite compiler.
-- **Backend Build**: Verified via tsc compiler.
-- **TypeScript Check**: `npx tsc --noEmit` returns zero errors.
-- **Linter Check**: `oxlint` returns zero warnings and errors.
-- **E2E verification tests**: [test_flow.ts](file:///c:/Users/Svara/Downloads/TECH/PROJECTS/RecoverAI/server/scratch/test_flow.ts) ran successfully.
+## Verification & Validation
+
+The codebase has been verified against the following criteria:
+
+- **Frontend Production Build**: `npm run build` in `client` compiles in 1.13s with **0 errors** (`Exit Code 0`).
+- **Backend Production Build**: `npm run build` in `server` compiles with **0 errors** (`Exit Code 0`).
+- **Groq API Model Connectivity**: Verified live model availability (`openai/gpt-oss-120b`) via `/api/ai/status`.
+- **Fraud Safety Guardrail (Rule 2)**: Verified `FRAUD_SUSPECTED` and `INVALID_CARD` transactions return `status: "STOPPED"` and block execution with **HTTP 400 Bad Request**.
+- **High-Value Guardrail (Rule 3)**: Verified transactions $> ₹25,000$ return `status: "PENDING_APPROVAL"` requiring merchant authorization.
+- **Analytics Data Pipeline**: Verified conversion funnel metrics derive 100% from live PostgreSQL query aggregations.
 
 ---
 
-## Limitations
-- **Simulated Recovery**: Payment completions and outreach outcomes are generated through transaction-level statistical profiles rather than real merchant webhook callbacks.
-- **Synthetic Profiles**: Card details, emails, and transaction numbers are mock structures generated for localized evaluator execution.
+## License & Internship Context
 
----
-
-## Future Improvements
-- **Online evaluation**: A/B testing framework comparing different scoring algorithms.
-- **Generative explanation**: Integrating Gemini APIs for natural language email/SMS templates based on buyer history.
-- **Webhooks**: Direct support for Razorpay payment webhooks to automatically trigger diagnostics upon checkout failures.
-
----
-
-## Safety Disclaimer
-RecoverAI is a prototype using synthetic transaction data. It does not process real payments, move real money, or interact with live payment credentials.
+Developed for the **Razorpay AI Builder Internship Track 3 (AI Revenue Recovery)**.

@@ -1,5 +1,7 @@
 import prisma from "../utils/prisma";
 import { InsightType, InsightSeverity } from "../ai/types";
+import { generateGroqInsights } from "../ai/insightGenerator";
+import { isGroqAvailable } from "../ai/groqClient";
 
 export const insightService = {
   async getAll(filters?: { type?: string; severity?: string }) {
@@ -7,90 +9,119 @@ export const insightService = {
     if (filters?.type) where.type = filters.type as InsightType;
     if (filters?.severity) where.severity = filters.severity as InsightSeverity;
 
-    // Fetch database insights
+    // ─── 1. Generate Groq-powered insights from real data ──────
+    let groqInsights: any[] = [];
+
+    try {
+      // Query real aggregated data for the insight generator
+      const [
+        totalTxCount,
+        failedTxCount,
+        allOpps,
+        batchRuns,
+        failureGroups,
+        transactions,
+      ] = await Promise.all([
+        prisma.transaction.count(),
+        prisma.transaction.count({
+          where: { status: { in: ["FAILED", "DECLINED", "ABANDONED"] } },
+        }),
+        prisma.recoveryOpportunity.findMany({
+          include: { transaction: true },
+        }),
+        prisma.recoveryBatchRun.findMany({ orderBy: { createdAt: "desc" } }),
+        prisma.transaction.groupBy({
+          by: ["failureReason"],
+          where: { failureReason: { not: null }, status: { in: ["FAILED", "DECLINED"] } },
+          _count: true,
+          _sum: { amount: true },
+        }),
+        prisma.transaction.findMany({
+          select: { amount: true, gateway: true, paymentMethod: true },
+          where: { status: { in: ["FAILED", "DECLINED", "ABANDONED"] } },
+        }),
+      ]);
+
+      const totalOpps = allOpps.length;
+      const recoveredOpps = allOpps.filter(o => o.status === "RECOVERED" || o.status === "PARTIALLY_RECOVERED");
+      const stoppedCount = allOpps.filter(o => o.status === "STOPPED").length;
+      const escalatedCount = allOpps.filter(o => o.status === "ESCALATED" || o.status === "PENDING_APPROVAL").length;
+      const failedCount = allOpps.filter(o => o.status === "FAILED").length;
+      const totalRevenueAtRisk = allOpps.reduce((s, o) => s + o.transaction.amount, 0);
+      const totalRecovered = recoveredOpps.reduce((s, o) => s + (o.recoveredAmount || 0), 0);
+      const highValueOpps = allOpps.filter(o => o.transaction.amount > 25000);
+      const avgScore = totalOpps > 0
+        ? Math.round(allOpps.reduce((s, o) => s + o.recoveryScore, 0) / totalOpps)
+        : 0;
+
+      // Find top gateway and payment method among failures
+      const gatewayCount: Record<string, number> = {};
+      const methodCount: Record<string, number> = {};
+      transactions.forEach(t => {
+        gatewayCount[t.gateway] = (gatewayCount[t.gateway] || 0) + 1;
+        methodCount[t.paymentMethod] = (methodCount[t.paymentMethod] || 0) + 1;
+      });
+      const topGateway = Object.entries(gatewayCount).sort((a, b) => b[1] - a[1])[0]?.[0] || "Unknown";
+      const topMethod = Object.entries(methodCount).sort((a, b) => b[1] - a[1])[0]?.[0] || "Unknown";
+
+      const failureBreakdown = failureGroups.map(f => ({
+        reason: f.failureReason || "UNKNOWN",
+        count: f._count,
+        amount: Math.round(f._sum.amount || 0),
+      }));
+
+      const lastRun = batchRuns[0];
+
+      // Call Groq insight generator with real data
+      groqInsights = await generateGroqInsights({
+        totalTransactions: totalTxCount,
+        failedTransactions: failedTxCount,
+        failureBreakdown,
+        recoveryStats: {
+          total: totalOpps,
+          recovered: recoveredOpps.length,
+          stopped: stoppedCount,
+          escalated: escalatedCount,
+          failed: failedCount,
+          totalRevenueAtRisk,
+          totalRecovered,
+        },
+        recentPatterns: {
+          topGateway,
+          topPaymentMethod: topMethod,
+          avgRecoveryScore: avgScore,
+          highValueCount: highValueOpps.length,
+          highValueAmount: highValueOpps.reduce((s, o) => s + o.transaction.amount, 0),
+        },
+        batchRunStats: {
+          totalRuns: batchRuns.length,
+          lastRunRecoveryRate: lastRun?.recoveryRate || 0,
+          lastRunRecovered: lastRun?.totalRecoveredRevenue || 0,
+        },
+      });
+    } catch (e) {
+      console.error("Failed to generate Groq insights:", e);
+    }
+
+    // ─── 2. Fetch database seed insights as secondary source ──
     const dbInsights = await prisma.aIInsight.findMany({
       where,
       orderBy: [{ severity: "asc" }, { createdAt: "desc" }],
     });
 
-    // Generate dynamic insights from actual simulation outcomes!
-    const dynamicInsights: any[] = [];
+    // ─── 3. Combine: Groq insights first, then DB insights ────
+    // Filter Groq insights by query params
+    let filteredGroq = groqInsights;
+    if (filters?.type) filteredGroq = filteredGroq.filter(i => i.type === filters.type);
+    if (filters?.severity) filteredGroq = filteredGroq.filter(i => i.severity === filters.severity);
 
-    try {
-      const [allOpps, batchRuns] = await Promise.all([
-        prisma.recoveryOpportunity.findMany({
-          include: { transaction: true }
-        }),
-        prisma.recoveryBatchRun.findMany()
-      ]);
-
-      const totalOpps = allOpps.length;
-      const stoppedCount = allOpps.filter(o => o.status === "STOPPED").length;
-      const escalatedCount = allOpps.filter(o => o.status === "ESCALATED" || o.status === "PENDING_APPROVAL").length;
-      const highValueCount = allOpps.filter(o => o.transaction.amount > 25000).length;
-
-      if (totalOpps > 0) {
-        if (stoppedCount > 0) {
-          dynamicInsights.push({
-            id: "dynamic-insight-stopped",
-            type: "PATTERN",
-            severity: "HIGH",
-            title: `Outreach Prevented for ${stoppedCount} Low-Confidence Transactions`,
-            description: `Agent guardrails automatically stopped recovery actions for ${stoppedCount} opportunities where confidence score fell below 50% or maximum retry limits were reached. This prevented unnecessary user messaging.`,
-            data: { stopped: stoppedCount, pct: Math.round((stoppedCount / totalOpps) * 100) },
-            actionable: true,
-            actionUrl: "/recovery?status=STOPPED",
-            dismissed: false,
-            createdAt: new Date(),
-          });
-        }
-
-        if (escalatedCount > 0) {
-          dynamicInsights.push({
-            id: "dynamic-insight-escalated",
-            type: "RECOMMENDATION",
-            severity: "MEDIUM",
-            title: `${escalatedCount} High-Value Recovery Actions Pending Approval`,
-            description: `A total of ${escalatedCount} recovery opportunities exceeded the ₹25,000 threshold. Under Rule 3, these actions require merchant approval before execution.`,
-            data: { escalated: escalatedCount, highValue: highValueCount },
-            actionable: true,
-            actionUrl: "/recovery?status=PENDING_APPROVAL",
-            dismissed: false,
-            createdAt: new Date(),
-          });
-        }
-      }
-
-      if (batchRuns.length > 0) {
-        const lastRun = batchRuns[0];
-        if (lastRun.attemptedRecoveries > 0) {
-          dynamicInsights.push({
-            id: "dynamic-insight-batch-success",
-            type: "TREND",
-            severity: "HIGH",
-            title: `Batch ${lastRun.id.slice(0, 4)} Yielded a ${lastRun.recoveryRate}% Recovery Lift`,
-            description: `Our latest recovery run recovered ₹${lastRun.totalRecoveredRevenue.toLocaleString()} of ₹${lastRun.totalExpectedRecovery.toLocaleString()} expected revenue with guardrails enabled.`,
-            data: { rate: lastRun.recoveryRate, recovered: lastRun.totalRecoveredRevenue },
-            actionable: false,
-            dismissed: false,
-            createdAt: new Date(),
-          });
-        }
-      }
-    } catch (e) {
-      console.error("Failed to generate dynamic insights:", e);
-    }
-
-    // Filter dynamic insights based on query parameters
-    let filteredDynamic = dynamicInsights;
-    if (filters?.type) filteredDynamic = filteredDynamic.filter(i => i.type === filters.type);
-    if (filters?.severity) filteredDynamic = filteredDynamic.filter(i => i.severity === filters.severity);
-
-    return [...filteredDynamic, ...dbInsights];
+    // If Groq produced insights, prioritize them; DB insights are supplementary
+    return [...filteredGroq, ...dbInsights];
   },
 
   async dismiss(id: string) {
-    if (id.startsWith("dynamic-")) {
+    // Groq-generated insights are ephemeral (not persisted)
+    if (id.startsWith("groq-") || id.startsWith("dynamic-")) {
       return { id, dismissed: true };
     }
     return prisma.aIInsight.update({

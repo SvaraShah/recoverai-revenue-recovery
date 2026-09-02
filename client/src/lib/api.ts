@@ -39,11 +39,27 @@ export const dashboardApi = {
     request<import("@/types").FailureBreakdown[]>("/dashboard/failure-breakdown"),
 };
 
+// Helper to clean query params
+function buildQueryString(params?: Record<string, string>): string {
+  if (!params) return "";
+  const cleanedParams: Record<string, string> = {};
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== "") {
+      if (key === "status" && value.toUpperCase() === "ALL") {
+        return;
+      }
+      cleanedParams[key] = value;
+    }
+  });
+  const search = new URLSearchParams(cleanedParams).toString();
+  return search ? `?${search}` : "";
+}
+
 // ─── Transactions ────────────────────────────────────────
 
 export const transactionsApi = {
   getAll: (params?: Record<string, string>) => {
-    const query = params ? `?${new URLSearchParams(params)}` : "";
+    const query = buildQueryString(params);
     return request<import("@/types").PaginatedResponse<import("@/types").Transaction>>(`/transactions${query}`);
   },
   getById: (id: string) => request<import("@/types").Transaction>(`/transactions/${id}`),
@@ -54,7 +70,7 @@ export const transactionsApi = {
 
 export const recoveryApi = {
   getAll: (params?: Record<string, string>) => {
-    const query = params ? `?${new URLSearchParams(params)}` : "";
+    const query = buildQueryString(params);
     return request<import("@/types").PaginatedResponse<import("@/types").RecoveryOpportunity>>(`/recovery${query}`);
   },
   getById: (id: string) => request<import("@/types").RecoveryOpportunity>(`/recovery/${id}`),

@@ -16,8 +16,8 @@ export default function AppShell() {
       <Header sidebarCollapsed={sidebarCollapsed} />
       <main
         className={cn(
-          "pt-16 min-h-screen transition-all duration-300",
-          sidebarCollapsed ? "ml-[68px]" : "ml-[240px]"
+          "pt-16 min-h-screen transition-all duration-200",
+          sidebarCollapsed ? "ml-[64px]" : "ml-[230px]"
         )}
       >
         <div className="p-6">

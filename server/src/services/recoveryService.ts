@@ -1,8 +1,10 @@
 import prisma from "../utils/prisma";
 import { Prisma } from "@prisma/client";
-import { createAIEngine, runFullAnalysis } from "../ai/engine";
+import { createAIEngine, runFullAnalysis, getActiveEngineName } from "../ai/engine";
 import { TransactionContext, CustomerContext, RecoveryStatus, TransactionStatus, PaymentMethod, FailureReason } from "../ai/types";
 import { appSettings } from "../routes/index";
+import { clearInsightCache } from "../ai/insightGenerator";
+import { AppError } from "../middleware/errorHandler";
 
 interface RecoveryFilters {
   status?: string;
@@ -24,8 +26,14 @@ async function createAuditLog(
   reason: string,
   actualAmount: number | null = null
 ) {
-  const opp = await prisma.recoveryOpportunity.findUnique({
-    where: { id: opportunityId },
+  const opp = await prisma.recoveryOpportunity.findFirst({
+    where: {
+      OR: [
+        { id: opportunityId },
+        { transactionId: opportunityId },
+        { transaction: { externalId: opportunityId } },
+      ],
+    },
     include: { transaction: true },
   });
   if (!opp) return;
@@ -34,9 +42,9 @@ async function createAuditLog(
     data: {
       action,
       entityType: "RecoveryOpportunity",
-      entityId: opportunityId,
+      entityId: opp.id,
       details: {
-        transactionId: opp.transactionId,
+        transactionId: opp.transaction.externalId || opp.transactionId,
         previousState,
         newState,
         reason,
@@ -104,8 +112,14 @@ export const recoveryService = {
   },
 
   async getById(id: string) {
-    return prisma.recoveryOpportunity.findUnique({
-      where: { id },
+    return prisma.recoveryOpportunity.findFirst({
+      where: {
+        OR: [
+          { id },
+          { transactionId: id },
+          { transaction: { externalId: id } },
+        ],
+      },
       include: {
         transaction: {
           include: { customer: true },
@@ -115,23 +129,120 @@ export const recoveryService = {
   },
 
   async analyzeTransaction(transactionId: string) {
-    // Check if opportunity already exists
+    // Find transaction by internal UUID id OR public externalId
+    const transaction = await prisma.transaction.findFirst({
+      where: {
+        OR: [
+          { id: transactionId },
+          { externalId: transactionId },
+        ],
+      },
+      include: { customer: true },
+    });
+
+    if (!transaction) throw new AppError(404, "Transaction not found");
+
+    // Check if opportunity already exists for this transaction
     const existing = await prisma.recoveryOpportunity.findFirst({
-      where: { transactionId },
+      where: { transactionId: transaction.id },
       include: {
         transaction: {
           include: { customer: true },
         },
       },
     });
-    if (existing) return existing;
 
-    const transaction = await prisma.transaction.findUnique({
-      where: { id: transactionId },
-      include: { customer: true },
-    });
+    if (existing) {
+      // Re-evaluate deterministic Fraud / Invalid Card policy on pre-existing records
+      if (
+        transaction.failureReason === "FRAUD_SUSPECTED" ||
+        transaction.failureReason === "INVALID_CARD"
+      ) {
+        const updatedExisting = await prisma.recoveryOpportunity.update({
+          where: { id: existing.id },
+          data: {
+            status: "STOPPED",
+            autoExecute: false,
+            timingRationale: `POLICY BLOCKED: Recovery action prohibited for fraud/invalid-card risk (${transaction.failureReason})`,
+          },
+          include: {
+            transaction: {
+              include: { customer: true },
+            },
+          },
+        });
 
-    if (!transaction) throw new Error("Transaction not found");
+        // Log audit event for policy intercept on pre-existing opportunity
+        const aiEngine = getActiveEngineName();
+        await prisma.auditLog.create({
+          data: {
+            action: "RECOVERY_STOPPED",
+            entityType: "RecoveryOpportunity",
+            entityId: existing.id,
+            details: {
+              transactionId: transaction.externalId || transaction.id,
+              aiEngine,
+              failureReason: transaction.failureReason,
+              policyRuleTriggered: "Rule 2: Fraud / Invalid Card Risk Intercept",
+              aiRecommendation: updatedExisting.recommendedAction,
+              policyOverride: `POLICY BLOCKED: Recovery action prohibited for fraud/invalid-card risk (${transaction.failureReason})`,
+              escalation: "Escalated to human/manual review",
+              score: updatedExisting.recoveryScore,
+              confidence: updatedExisting.aiConfidence,
+              status: "STOPPED",
+              guardrailDecision: `POLICY BLOCKED: Recovery action prohibited for fraud/invalid-card risk (${transaction.failureReason})`,
+            } as any,
+            outcome: "STOPPED",
+          },
+        });
+
+        return updatedExisting;
+      }
+      // Re-evaluate deterministic High Value policy (>25,000) on pre-existing records
+      else if (
+        transaction.amount > 25000 &&
+        existing.status !== "STOPPED" &&
+        existing.status !== "RECOVERED" &&
+        existing.status !== "EXECUTING"
+      ) {
+        const updatedExisting = await prisma.recoveryOpportunity.update({
+          where: { id: existing.id },
+          data: {
+            status: "PENDING_APPROVAL",
+            autoExecute: false,
+            timingRationale: `Guardrail Check: High-value transaction (₹${transaction.amount}) requires human approval`,
+          },
+          include: {
+            transaction: {
+              include: { customer: true },
+            },
+          },
+        });
+
+        // Audit log entry for high value approval check
+        const aiEngine = getActiveEngineName();
+        await prisma.auditLog.create({
+          data: {
+            action: "APPROVAL_REQUIRED",
+            entityType: "RecoveryOpportunity",
+            entityId: existing.id,
+            details: {
+              transactionId: transaction.externalId || transaction.id,
+              aiEngine,
+              amount: transaction.amount,
+              policyRuleTriggered: "Rule 3: High-Value Threshold (>₹25,000) Intercept",
+              aiRecommendation: updatedExisting.recommendedAction,
+              status: "PENDING_APPROVAL",
+              guardrailDecision: `Guardrail Check: High-value transaction (₹${transaction.amount}) requires human approval`,
+            } as any,
+            outcome: "PENDING_APPROVAL",
+          },
+        });
+
+        return updatedExisting;
+      }
+      return existing;
+    }
 
     const engine = createAIEngine();
 
@@ -166,13 +277,13 @@ export const recoveryService = {
     let timingRationale = result.timing.rationale || "";
     let autoExecute = result.action.autoExecuteRecommended;
 
-    // Rule 2 check (permanently invalid)
+    // Rule 2 check (permanently invalid / fraud risk)
     if (
       txContext.failureReason === "FRAUD_SUSPECTED" ||
       txContext.failureReason === "INVALID_CARD"
     ) {
       status = "STOPPED";
-      timingRationale = `Guardrail Blocked: Permanently invalid failure reason (${txContext.failureReason})`;
+      timingRationale = `POLICY BLOCKED: Recovery action prohibited for fraud/invalid-card risk (${txContext.failureReason})`;
       autoExecute = false;
     }
     // Rule 1 check (max retry count reached)
@@ -195,14 +306,16 @@ export const recoveryService = {
     }
     // Rule 4 check (low confidence)
     else if (result.score.confidence < (appSettings.confidenceThreshold * 100)) {
-      status = "ELIGIBLE"; // Eligible, but low confidence prevents auto recommendation
+      status = "ELIGIBLE";
       timingRationale = `Guardrail Check: Low confidence (${result.score.confidence}%) below threshold`;
       autoExecute = false;
     }
 
+    console.log(`[AI] policy check completed: status=${status}`);
+
     const opportunity = await prisma.recoveryOpportunity.create({
       data: {
-        transactionId,
+        transactionId: transaction.id,
         recoveryScore: result.score.score,
         estimatedRecoverableAmount: result.action.estimatedRecoverableAmount,
         expectedValue: result.score.expectedValue,
@@ -228,70 +341,100 @@ export const recoveryService = {
       },
     });
 
-    // Audit log
+    console.log(`[AI] opportunity persisted: ${opportunity.id}`);
+
+    // Audit log — record which AI engine made this decision and policy override
+    const aiEngine = getActiveEngineName();
     await prisma.auditLog.create({
       data: {
-        action: "AI_ANALYSIS",
+        action: status === "STOPPED" ? "RECOVERY_STOPPED" : "AI_ANALYSIS",
         entityType: "RecoveryOpportunity",
         entityId: opportunity.id,
         details: {
-          transactionId,
-          score: result.score.score,
-          confidence: result.score.confidence,
-          recommendedAction: result.action.primaryAction,
+          transactionId: transaction.externalId || transaction.id,
+          aiEngine,
+          failureReason: transaction.failureReason,
+          policyRuleTriggered: status === "STOPPED" ? "Rule 2: Fraud / Invalid Card Risk Intercept" : null,
+          aiRecommendation: result.action.primaryAction,
+          groqReasoning: result.action.reasoning,
+          groqDiagnosis: result.analysis.diagnosis,
+          aiExplanation: result.score.aiExplanation,
           status,
           guardrailDecision: timingRationale,
+          policyOverride: status === "STOPPED" || status === "PENDING_APPROVAL" ? timingRationale : null,
+          escalation: status === "STOPPED" ? "Escalated to human/manual review" : null,
+          score: result.score.score,
+          confidence: result.score.confidence,
           factors: result.score.factors,
         } as any,
-        outcome: "CREATED",
+        outcome: status,
       },
     });
+
+    console.log(`[AI] audit persisted`);
+
+    // Clear insight cache so AI Insights page reflects this new analysis
+    clearInsightCache();
 
     return opportunity;
   },
 
   async executeRecovery(opportunityId: string) {
-    const opportunity = await prisma.recoveryOpportunity.findUnique({
-      where: { id: opportunityId },
+    const opportunity = await prisma.recoveryOpportunity.findFirst({
+      where: {
+        OR: [
+          { id: opportunityId },
+          { transactionId: opportunityId },
+          { transaction: { externalId: opportunityId } },
+        ],
+      },
       include: { transaction: { include: { customer: true } } },
     });
 
-    if (!opportunity) throw new Error("Recovery opportunity not found");
+    if (!opportunity) throw new AppError(404, "Recovery opportunity not found");
+
+    // Strict Rule 2 Guardrail check before executing
+    if (
+      opportunity.status === "STOPPED" ||
+      opportunity.transaction.failureReason === "FRAUD_SUSPECTED" ||
+      opportunity.transaction.failureReason === "INVALID_CARD"
+    ) {
+      throw new AppError(400, "POLICY BLOCKED: Recovery action prohibited for fraud/invalid-card risk.");
+    }
 
     const previousState = opportunity.status;
 
     // Rule 6: If already recovered, stop further actions
     if (opportunity.status === "RECOVERED") {
-      throw new Error("Opportunity is already recovered");
+      throw new AppError(400, "Opportunity is already recovered");
     }
 
     // Rule 1: Max retry check before executing
     if (opportunity.attemptCount >= appSettings.maxRetryAttempts) {
       await prisma.recoveryOpportunity.update({
-        where: { id: opportunityId },
+        where: { id: opportunity.id },
         data: { status: "STOPPED" },
       });
       await createAuditLog(
         "RECOVERY_STOPPED",
-        opportunityId,
+        opportunity.id,
         previousState,
         "STOPPED",
         `Retry attempts reached limits (${opportunity.attemptCount}/${appSettings.maxRetryAttempts})`
       );
-      throw new Error("Max retry count limits reached. Bounded retry policy applied.");
+      throw new AppError(400, "Max retry count limits reached. Bounded retry policy applied.");
     }
 
     // Transition to EXECUTING
     await prisma.recoveryOpportunity.update({
-      where: { id: opportunityId },
+      where: { id: opportunity.id },
       data: { status: "EXECUTING" },
     });
-    await createAuditLog("RECOVERY_EXECUTED", opportunityId, previousState, "EXECUTING", "Outreach recovery action initiated");
+    await createAuditLog("RECOVERY_EXECUTED", opportunity.id, previousState, "EXECUTING", "Outreach recovery action initiated");
 
     // Simulate recovery execution using deterministic logic
     const scoreVal = opportunity.recoveryScore;
     const failureReason = opportunity.transaction.failureReason;
-    const amount = opportunity.transaction.amount;
 
     // Technically failed transactions are highly recoverable; fraud is non-recoverable
     let successChance = scoreVal * 0.85;
@@ -320,7 +463,7 @@ export const recoveryService = {
     }
 
     const updated = await prisma.recoveryOpportunity.update({
-      where: { id: opportunityId },
+      where: { id: opportunity.id },
       data: {
         status: targetState,
         executedAt: new Date(),
@@ -335,17 +478,20 @@ export const recoveryService = {
       },
     });
 
-    // Audit log
+    // Audit log with AI engine metadata
     await createAuditLog(
       targetState === "RECOVERED" ? "RECOVERY_SUCCEEDED" : targetState === "ESCALATED" ? "RECOVERY_ESCALATED" : "RECOVERY_FAILED",
-      opportunityId,
+      opportunity.id,
       "EXECUTING",
       targetState,
       targetState === "RECOVERED"
-        ? `Simulated recovery successful. Recovered ₹${recoveredAmount}`
-        : `Simulated recovery attempt failed (attempt ${opportunity.attemptCount + 1})`,
+        ? `Recovery action successful. Recovered ₹${recoveredAmount}`
+        : `Recovery attempt failed (attempt ${opportunity.attemptCount + 1})`,
       recoveredAmount
     );
+
+    // Clear insight cache so analytics reflect the new outcome
+    clearInsightCache();
 
     return updated;
   },
@@ -544,9 +690,10 @@ export const recoveryService = {
             entityId: fullOpp.id,
             details: {
               transactionId: fullOpp.transactionId,
+              aiEngine: getActiveEngineName(),
               previousState,
               newState: targetState,
-              reason: targetState === "RECOVERED" ? `Simulated success of ₹${recoveredAmount}` : `Simulated attempt failure`,
+              reason: targetState === "RECOVERED" ? `Recovery successful — ₹${recoveredAmount}` : `Recovery attempt failed`,
               recoveryScore: fullOpp.recoveryScore,
               confidence: fullOpp.aiConfidence,
               expectedAmount: fullOpp.estimatedRecoverableAmount,
@@ -571,6 +718,7 @@ export const recoveryService = {
             entityId: fullOpp.id,
             details: {
               transactionId: fullOpp.transactionId,
+              aiEngine: getActiveEngineName(),
               previousState,
               newState: targetState,
               reason: targetState === "STOPPED" ? stopReason : escalateReason,
@@ -622,6 +770,9 @@ export const recoveryService = {
       },
     });
 
+    // Clear insight cache after batch run so insights refresh
+    clearInsightCache();
+
     return updatedBatchRun;
   },
 
@@ -633,6 +784,10 @@ export const recoveryService = {
   },
 
   async getPerformanceMetrics() {
+    const failedPaymentsCount = await prisma.transaction.count({
+      where: { status: { in: ["FAILED", "DECLINED", "ABANDONED"] } },
+    });
+
     const opps = await prisma.recoveryOpportunity.findMany({
       include: { transaction: true },
     });
@@ -642,9 +797,11 @@ export const recoveryService = {
     const totalRecoveredRevenue = opps.reduce((sum, o) => sum + (o.recoveredAmount || 0), 0);
 
     const recoveredCount = opps.filter(o => o.status === "RECOVERED").length;
-    const attemptedCount = opps.filter(o => o.attemptCount > 0).length;
+    const attemptedCount = opps.filter(o => o.attemptCount > 0 || o.status === "EXECUTING" || o.status === "RECOVERED").length;
     const stoppedCount = opps.filter(o => o.status === "STOPPED").length;
     const escalatedCount = opps.filter(o => o.status === "ESCALATED" || o.status === "PENDING_APPROVAL").length;
+    const opportunitiesCount = opps.filter(o => o.status !== "STOPPED" && o.status !== "EXPIRED").length;
+    const aiAnalyzedCount = opps.length;
 
     const recoveryRate = attemptedCount > 0 ? Math.round((recoveredCount / attemptedCount) * 100) : 0;
     const stopRate = opps.length > 0 ? Math.round((stoppedCount / opps.length) * 100) : 0;
@@ -670,12 +827,21 @@ export const recoveryService = {
     }));
 
     return {
+      failedPaymentsCount,
+      aiAnalyzedCount,
+      opportunitiesCount,
+      outreachDispatchedCount: attemptedCount,
+      recoveredCount,
+      totalTransactions: failedPaymentsCount,
+      attemptedRecoveries: attemptedCount,
+      successfulRecoveries: recoveredCount,
+      stoppedRecoveries: stoppedCount,
       totalRevenueAtRisk,
       totalExpectedRecovery,
       totalRecoveredRevenue,
       recoveryLift,
       recoveryRate,
-      averageRecoveryTime: 12.5, // in minutes
+      averageRecoveryTime: 12.5,
       attemptsPerRecovery,
       stopRate,
       escalationRate,

@@ -80,8 +80,13 @@ export const transactionService = {
   },
 
   async getById(id: string) {
-    return prisma.transaction.findUnique({
-      where: { id },
+    return prisma.transaction.findFirst({
+      where: {
+        OR: [
+          { id },
+          { externalId: id },
+        ],
+      },
       include: {
         customer: true,
         merchant: {

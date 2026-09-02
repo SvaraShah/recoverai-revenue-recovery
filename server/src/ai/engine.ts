@@ -2,6 +2,8 @@ import { analyzeFailure } from "./analyzer";
 import { scoreRecoveryProbability } from "./scorer";
 import { recommendAction } from "./recommender";
 import { determineOptimalTiming } from "./scheduler";
+import { isGroqAvailable, logGroqStatus } from "./groqClient";
+import { GroqRecoveryAIEngine } from "./groqEngine";
 import {
   IRecoveryAIEngine,
   TransactionContext,
@@ -17,17 +19,10 @@ import {
  * MockRecoveryAIEngine — Deterministic AI engine for revenue recovery.
  *
  * Implements the IRecoveryAIEngine interface using rule-based,
- * deterministic logic. Designed to be a drop-in replacement target
- * for an LLM-backed engine.
- *
- * To swap for a real LLM:
- * 1. Create a new class implementing IRecoveryAIEngine
- * 2. Replace the `createAIEngine()` factory call
- * 3. All callers use the interface — no changes needed
+ * deterministic logic. Serves as the fallback when Groq is unavailable.
  */
 class MockRecoveryAIEngine implements IRecoveryAIEngine {
   async analyzeFailure(transaction: TransactionContext): Promise<FailureAnalysis> {
-    // Simulate async LLM call latency
     await this.simulateLatency(50, 150);
     return analyzeFailure(transaction);
   }
@@ -93,11 +88,28 @@ export async function runFullAnalysis(
 
 let engineInstance: IRecoveryAIEngine | null = null;
 
+/**
+ * Creates or returns the AI engine instance.
+ * - If GROQ_API_KEY is set → GroqRecoveryAIEngine (real LLM)
+ * - Otherwise → MockRecoveryAIEngine (deterministic fallback)
+ */
 export function createAIEngine(): IRecoveryAIEngine {
   if (!engineInstance) {
-    engineInstance = new MockRecoveryAIEngine();
+    if (isGroqAvailable()) {
+      engineInstance = new GroqRecoveryAIEngine();
+    } else {
+      engineInstance = new MockRecoveryAIEngine();
+    }
+    logGroqStatus();
   }
   return engineInstance;
+}
+
+/**
+ * Returns the name of the currently active AI engine.
+ */
+export function getActiveEngineName(): "groq" | "mock" {
+  return isGroqAvailable() ? "groq" : "mock";
 }
 
 export { IRecoveryAIEngine };

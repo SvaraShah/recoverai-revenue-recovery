@@ -7,13 +7,15 @@ server/node_modules/
 client/dist/
 server/dist/
 
-# SQLite lock files
+# SQLite & local databases
+server/prisma/dev.db
 server/prisma/dev.db-journal
 
 # Environments & secrets
 .env
 .env.local
 server/.env
+client/.env
 
 # Scratch/test scripts
 server/scratch/

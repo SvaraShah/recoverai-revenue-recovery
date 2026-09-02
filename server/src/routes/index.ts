@@ -5,6 +5,8 @@ import { transactionService } from "../services/transactionService";
 import { recoveryService } from "../services/recoveryService";
 import { campaignService } from "../services/campaignService";
 import { insightService, analyticsService } from "../services/analyticsService";
+import { getActiveEngineName } from "../ai/engine";
+import { isGroqAvailable, GROQ_MODEL } from "../ai/groqClient";
 
 const router = Router();
 
@@ -250,7 +252,7 @@ router.get(
   })
 );
 
-// ─── Settings (mock) ─────────────────────────────────────
+// ─── Settings ────────────────────────────────────────────
 
 export let appSettings = {
   businessName: "RecoverAI Demo",
@@ -261,17 +263,31 @@ export let appSettings = {
   cooldownPeriodHours: 24,
   emailNotifications: true,
   webhookUrl: "",
-  aiModelPreference: "mock-deterministic",
+  aiModelPreference: "auto", // "auto" selects groq if key is set, else mock
   confidenceThreshold: 0.7,
 };
 
 router.get("/settings", (_req: Request, res: Response) => {
-  res.json(appSettings);
+  res.json({
+    ...appSettings,
+    aiModelPreference: getActiveEngineName() === "groq" ? `groq (${GROQ_MODEL})` : "mock-deterministic",
+  });
 });
 
 router.patch("/settings", (req: Request, res: Response) => {
   appSettings = { ...appSettings, ...req.body };
   res.json(appSettings);
+});
+
+// ─── AI Status ───────────────────────────────────────────
+
+router.get("/ai/status", (_req: Request, res: Response) => {
+  res.json({
+    engine: getActiveEngineName(),
+    model: isGroqAvailable() ? GROQ_MODEL : null,
+    available: isGroqAvailable(),
+    // Never expose the API key
+  });
 });
 
 export default router;

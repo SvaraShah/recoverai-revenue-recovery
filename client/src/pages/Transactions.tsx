@@ -1,347 +1,306 @@
 import { useState } from "react";
 import {
   Search,
-  Filter,
   ChevronLeft,
   ChevronRight,
-  CreditCard,
-  Smartphone,
-  Building2,
-  Wallet,
   Sparkles,
   Eye,
+  AlertCircle,
+  RefreshCw,
 } from "lucide-react";
-import { cn, formatCurrency, formatDate, getStatusColor, truncateId } from "@/lib/utils";
+import { cn, formatCurrency, formatDate, getStatusColor } from "@/lib/utils";
 import { useFetch } from "@/hooks/useFetch";
-import { transactionsApi } from "@/lib/api";
-import type { PaginatedResponse, Transaction } from "@/types";
-
-const statusTabs = [
-  { value: "ALL", label: "All" },
-  { value: "FAILED", label: "Failed" },
-  { value: "DECLINED", label: "Declined" },
-  { value: "ABANDONED", label: "Abandoned" },
-  { value: "SUCCESS", label: "Success" },
-  { value: "PENDING", label: "Pending" },
-];
-
-const methodIcons: Record<string, React.ElementType> = {
-  CREDIT_CARD: CreditCard,
-  DEBIT_CARD: CreditCard,
-  UPI: Smartphone,
-  NET_BANKING: Building2,
-  WALLET: Wallet,
-  EMI: CreditCard,
-};
+import { transactionsApi, recoveryApi } from "@/lib/api";
+import type { PaginatedResponse, Transaction, RecoveryOpportunity } from "@/types";
+import AIAnalysisModal from "@/components/AIAnalysisModal";
 
 export default function TransactionsPage() {
-  const [status, setStatus] = useState("ALL");
-  const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
-  const [detailId, setDetailId] = useState<string | null>(null);
-  const [analyzing, setAnalyzing] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [analyzingId, setAnalyzingId] = useState<string | null>(null);
+  const [selectedOpportunity, setSelectedOpportunity] = useState<RecoveryOpportunity | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const { data, loading, refetch } = useFetch<PaginatedResponse<Transaction>>(
-    () =>
-      transactionsApi.getAll({
-        status,
-        search,
-        page: String(page),
-        limit: "15",
-      }),
-    [status, search, page]
+  const { data: response, loading, refetch } = useFetch<PaginatedResponse<Transaction>>(
+    () => {
+      const params: Record<string, string> = { page: String(page), limit: "15" };
+      if (statusFilter && statusFilter.toUpperCase() !== "ALL") {
+        params.status = statusFilter;
+      }
+      if (searchQuery && searchQuery.trim()) {
+        params.search = searchQuery.trim();
+      }
+      return transactionsApi.getAll(params);
+    },
+    [page, statusFilter, searchQuery]
   );
 
-  const { data: detail } = useFetch<Transaction | null>(
-    () => (detailId ? transactionsApi.getById(detailId) : Promise.resolve(null)),
-    [detailId]
-  );
-
-  const handleAnalyze = async (txId: string) => {
-    setAnalyzing(txId);
+  const handleAnalyze = async (transactionId: string) => {
+    setAnalyzingId(transactionId);
+    setErrorMsg(null);
     try {
-      await transactionsApi.analyze(txId);
+      const opportunity = await transactionsApi.analyze(transactionId);
+      setSelectedOpportunity(opportunity);
+      setModalOpen(true);
       refetch();
-    } catch {
-      // handle error
+    } catch (err: any) {
+      setErrorMsg(err.message || "Failed to analyze transaction with AI.");
     } finally {
-      setAnalyzing(null);
+      setAnalyzingId(null);
     }
   };
 
-  return (
-    <div className="space-y-5">
-      {/* Filters */}
-      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          {/* Status Tabs */}
-          <div className="flex gap-1 overflow-x-auto">
-            {statusTabs.map((tab) => (
-              <button
-                key={tab.value}
-                onClick={() => { setStatus(tab.value); setPage(1); }}
-                className={cn(
-                  "px-3 py-1.5 text-sm font-medium rounded-lg transition-colors whitespace-nowrap",
-                  status === tab.value
-                    ? "bg-blue-600 text-white"
-                    : "text-slate-600 hover:bg-slate-100"
-                )}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
+  const handleViewAnalysis = async (opportunityId: string) => {
+    try {
+      const opp = await recoveryApi.getById(opportunityId);
+      setSelectedOpportunity(opp);
+      setModalOpen(true);
+    } catch {
+      // handle error
+    }
+  };
 
-          {/* Search */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Search by ID, name, email..."
-              value={search}
-              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-              className="h-9 w-full sm:w-72 rounded-lg border border-slate-200 bg-slate-50 pl-9 pr-4 text-sm text-slate-700 placeholder:text-slate-400 outline-none focus:border-blue-300 focus:bg-white focus:ring-2 focus:ring-blue-100 transition-all"
-            />
-          </div>
+  const filterTabs = [
+    { id: "all", label: "All Transactions" },
+    { id: "FAILED", label: "Failed" },
+    { id: "DECLINED", label: "Declined" },
+    { id: "ABANDONED", label: "Abandoned" },
+    { id: "SUCCESS", label: "Successful" },
+    { id: "PENDING", label: "Pending" },
+  ];
+
+  return (
+    <div className="space-y-4">
+      {/* Hero Header */}
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-3 border-b border-slate-200 pb-4">
+        <div>
+          <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">Payment Operations</h1>
+          <p className="text-xs text-slate-500 mt-0.5 font-medium">
+            Monitor, analyze, and recover failed payment transactions.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] font-semibold text-slate-400 font-mono">
+            {response?.total || 0} total records
+          </span>
         </div>
       </div>
 
-      {/* Table */}
-      <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-        {loading ? (
-          <div className="space-y-0">
-            {[...Array(8)].map((_, i) => (
-              <div key={i} className="h-14 border-b border-slate-100 animate-pulse bg-slate-50/50" />
-            ))}
+      {/* Error Alert */}
+      {errorMsg && (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="h-4 w-4 shrink-0 text-red-600" />
+            <span>{errorMsg}</span>
           </div>
-        ) : data && data.data.length > 0 ? (
-          <>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-200 bg-slate-50/80">
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Transaction ID</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Customer</th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Amount</th>
-                    <th className="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Method</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Failure Reason</th>
-                    <th className="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">Recovery</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Date</th>
-                    <th className="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {data.data.map((tx) => {
-                    const MethodIcon = methodIcons[tx.paymentMethod] || CreditCard;
-                    return (
-                      <tr
-                        key={tx.id}
-                        className="hover:bg-slate-50/70 transition-colors"
-                      >
-                        <td className="px-4 py-3">
-                          <span className="font-mono text-xs text-slate-600">
-                            {truncateId(tx.externalId)}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <div>
-                            <p className="font-medium text-slate-800">{tx.customer?.name || "—"}</p>
-                            <p className="text-xs text-slate-400">{tx.customer?.email || ""}</p>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-right font-semibold text-slate-900">
-                          {formatCurrency(tx.amount)}
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          <span className={cn(
-                            "inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border",
-                            getStatusColor(tx.status)
-                          )}>
-                            {tx.status}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
-                            <MethodIcon className="h-4 w-4 text-slate-400" />
-                            <span className="text-xs text-slate-600">
-                              {tx.paymentMethod.replace(/_/g, " ")}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3">
-                          {tx.failureReason ? (
-                            <span className="text-xs text-slate-600">
-                              {tx.failureReason.replace(/_/g, " ")}
-                            </span>
-                          ) : (
-                            <span className="text-xs text-slate-300">—</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          {tx.recoveryOpportunity ? (
-                            <div className="flex items-center justify-center gap-1">
-                              <div className={cn(
-                                "h-6 w-6 rounded-full flex items-center justify-center text-[10px] font-bold border",
-                                tx.recoveryOpportunity.recoveryScore >= 70 ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
-                                tx.recoveryOpportunity.recoveryScore >= 40 ? "bg-amber-50 text-amber-700 border-amber-200" :
-                                "bg-red-50 text-red-700 border-red-200"
-                              )}>
-                                {tx.recoveryOpportunity.recoveryScore}
-                              </div>
-                            </div>
-                          ) : (
-                            <span className="text-xs text-slate-300">—</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-xs text-slate-500">
-                          {formatDate(tx.createdAt)}
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center justify-center gap-1">
-                            <button
-                              onClick={() => setDetailId(tx.id)}
-                              className="p-1.5 rounded-md text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
-                              title="View details"
-                            >
-                              <Eye className="h-4 w-4" />
-                            </button>
-                            {tx.status !== "SUCCESS" && !tx.recoveryOpportunity && (
-                              <button
-                                onClick={() => handleAnalyze(tx.id)}
-                                disabled={analyzing === tx.id}
-                                className={cn(
-                                  "p-1.5 rounded-md transition-colors",
-                                  analyzing === tx.id
-                                    ? "text-blue-400 animate-pulse-subtle"
-                                    : "text-slate-400 hover:text-violet-600 hover:bg-violet-50"
-                                )}
-                                title="AI Analyze"
-                              >
-                                <Sparkles className="h-4 w-4" />
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+          <button onClick={() => setErrorMsg(null)} className="font-bold text-red-800 hover:underline">Dismiss</button>
+        </div>
+      )}
 
-            {/* Pagination */}
-            <div className="flex items-center justify-between border-t border-slate-200 px-5 py-3">
-              <p className="text-sm text-slate-500">
-                Showing {(data.page - 1) * data.limit + 1}–
-                {Math.min(data.page * data.limit, data.total)} of {data.total}
-              </p>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setPage(Math.max(1, page - 1))}
-                  disabled={page === 1}
-                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </button>
-                {Array.from({ length: Math.min(5, data.totalPages) }, (_, i) => {
-                  const pageNum = i + 1;
+      {/* Filter Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        {/* Status Pills */}
+        <div className="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0">
+          {filterTabs.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => { setStatusFilter(tab.id); setPage(1); }}
+              className={cn(
+                "px-3 py-1.5 text-xs font-semibold rounded-lg transition-all whitespace-nowrap",
+                statusFilter === tab.id
+                  ? "bg-slate-900 text-white shadow-2xs"
+                  : "text-slate-600 hover:bg-slate-200/60"
+              )}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Search */}
+        <div className="relative w-full sm:w-64">
+          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+          <input
+            type="text"
+            placeholder="Filter by customer, ID..."
+            value={searchQuery}
+            onChange={(e) => { setSearchQuery(e.target.value); setPage(1); }}
+            className="w-full h-8.5 rounded-lg border border-slate-200 bg-white pl-8 pr-3 text-xs text-slate-800 placeholder:text-slate-400 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 font-medium"
+          />
+        </div>
+      </div>
+
+      {/* HERO TRANSACTION TABLE */}
+      <div className="rounded-xl border border-slate-200 bg-white shadow-2xs overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead className="bg-slate-50 border-b border-slate-200 text-[11px] font-bold uppercase tracking-wider text-slate-500 sticky top-0">
+              <tr>
+                <th className="py-3 px-4">Transaction</th>
+                <th className="py-3 px-4">Customer</th>
+                <th className="py-3 px-4">Method</th>
+                <th className="py-3 px-4">Failure Reason</th>
+                <th className="py-3 px-4 text-center">Score</th>
+                <th className="py-3 px-4 text-right">Amount</th>
+                <th className="py-3 px-4 text-center">Status</th>
+                <th className="py-3 px-4 text-right">Date</th>
+                <th className="py-3 px-4 text-right">AI Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {loading ? (
+                [...Array(8)].map((_, i) => (
+                  <tr key={i} className="animate-pulse">
+                    <td colSpan={9} className="py-3.5 px-4"><div className="h-4 bg-slate-100 rounded" /></td>
+                  </tr>
+                ))
+              ) : response?.data && response.data.length > 0 ? (
+                response.data.map((tx) => {
+                  const isFailed = ["FAILED", "DECLINED", "ABANDONED"].includes(tx.status);
+                  const hasOpportunity = !!tx.recoveryOpportunity;
+                  const isAnalyzing = analyzingId === tx.id || analyzingId === tx.externalId;
+
                   return (
-                    <button
-                      key={pageNum}
-                      onClick={() => setPage(pageNum)}
-                      className={cn(
-                        "flex h-8 w-8 items-center justify-center rounded-lg text-sm font-medium transition-colors",
-                        page === pageNum
-                          ? "bg-blue-600 text-white"
-                          : "border border-slate-200 text-slate-600 hover:bg-slate-50"
-                      )}
+                    <tr
+                      key={tx.id}
+                      className="hover:bg-slate-50/80 transition-colors group"
                     >
-                      {pageNum}
-                    </button>
+                      <td className="py-3 px-4 font-mono text-[11px] text-slate-700 font-semibold">
+                        {tx.externalId || tx.id.slice(0, 14)}
+                      </td>
+
+                      <td className="py-3 px-4">
+                        <p className="font-semibold text-slate-900">{tx.customer?.name || "N/A"}</p>
+                        <p className="text-[11px] text-slate-400 font-mono truncate max-w-[140px]">{tx.customer?.email || ""}</p>
+                      </td>
+
+                      <td className="py-3 px-4">
+                        <span className="font-medium text-slate-700">{tx.paymentMethod.replace(/_/g, " ")}</span>
+                        <span className="text-[10px] text-slate-400 block font-mono">{tx.gateway}</span>
+                      </td>
+
+                      <td className="py-3 px-4">
+                        {tx.failureReason ? (
+                          <span className="inline-block max-w-[160px] truncate text-[11px] font-medium text-red-700 bg-red-50 border border-red-100 px-2 py-0.5 rounded">
+                            {tx.failureReason.replace(/_/g, " ")}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400 text-[11px]">—</span>
+                        )}
+                      </td>
+
+                      <td className="py-3 px-4 text-center">
+                        {tx.recoveryOpportunity ? (
+                          <span className={cn(
+                            "inline-block font-mono font-bold text-[11px] px-2 py-0.5 rounded",
+                            tx.recoveryOpportunity.recoveryScore >= 70 ? "bg-emerald-50 text-emerald-700 border border-emerald-200" :
+                            tx.recoveryOpportunity.recoveryScore >= 40 ? "bg-amber-50 text-amber-700 border border-amber-200" :
+                            "bg-red-50 text-red-700 border border-red-200"
+                          )}>
+                            {tx.recoveryOpportunity.recoveryScore}
+                          </span>
+                        ) : (
+                          <span className="text-slate-300 text-[11px]">—</span>
+                        )}
+                      </td>
+
+                      <td className="py-3 px-4 text-right font-bold text-slate-900 tabular-nums text-sm">
+                        {formatCurrency(tx.amount)}
+                      </td>
+
+                      <td className="py-3 px-4 text-center">
+                        <span className={cn(
+                          "inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border",
+                          getStatusColor(tx.status)
+                        )}>
+                          {tx.status}
+                        </span>
+                      </td>
+
+                      <td className="py-3 px-4 text-right text-[11px] text-slate-400 font-mono">
+                        {formatDate(tx.createdAt).split(",")[0]}
+                      </td>
+
+                      <td className="py-3 px-4 text-right">
+                        {hasOpportunity ? (
+                          <button
+                            onClick={() => handleViewAnalysis(tx.recoveryOpportunity!.id)}
+                            className="inline-flex items-center gap-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2.5 py-1 rounded-md hover:bg-indigo-100 transition-colors shadow-2xs"
+                          >
+                            <Eye className="h-3.5 w-3.5" />
+                            <span>AI Analysis</span>
+                          </button>
+                        ) : isFailed ? (
+                          <button
+                            onClick={() => handleAnalyze(tx.externalId || tx.id)}
+                            disabled={isAnalyzing}
+                            className={cn(
+                              "inline-flex items-center gap-1.5 text-xs font-bold text-white bg-indigo-600 border border-indigo-700 px-3 py-1 rounded-md hover:bg-indigo-700 transition-all shadow-2xs disabled:opacity-50"
+                            )}
+                          >
+                            {isAnalyzing ? (
+                              <>
+                                <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                                <span>AI ANALYZING...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Sparkles className="h-3.5 w-3.5 text-indigo-200" />
+                                <span>✦ Analyze with AI</span>
+                              </>
+                            )}
+                          </button>
+                        ) : (
+                          <span className="text-[11px] text-slate-400 font-medium">None</span>
+                        )}
+                      </td>
+                    </tr>
                   );
-                })}
-                <button
-                  onClick={() => setPage(Math.min(data.totalPages, page + 1))}
-                  disabled={page === data.totalPages}
-                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </button>
-              </div>
+                })
+              ) : (
+                <tr>
+                  <td colSpan={9} className="py-12 text-center text-slate-400 text-xs">
+                    No transactions match current filters.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Pagination Footer */}
+        {response && response.totalPages > 1 && (
+          <div className="flex items-center justify-between border-t border-slate-200 bg-slate-50 px-4 py-2.5 text-xs">
+            <span className="text-slate-500 font-medium">
+              Page <strong>{response.page}</strong> of <strong>{response.totalPages}</strong> ({response.total} total)
+            </span>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page === 1}
+                className="p-1.5 rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-40"
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
+              </button>
+              <button
+                onClick={() => setPage((p) => Math.min(response.totalPages, p + 1))}
+                disabled={page === response.totalPages}
+                className="p-1.5 rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-40"
+              >
+                <ChevronRight className="h-3.5 w-3.5" />
+              </button>
             </div>
-          </>
-        ) : (
-          <div className="flex flex-col items-center justify-center py-20 text-slate-400">
-            <Filter className="h-10 w-10 mb-3 text-slate-300" />
-            <p className="text-sm">No transactions found</p>
-            <p className="text-xs mt-1">Try adjusting your filters</p>
           </div>
         )}
       </div>
 
-      {/* Detail Modal */}
-      {detailId && detail && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setDetailId(null)}>
-          <div className="mx-4 w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-5">
-              <h3 className="text-lg font-semibold text-slate-900">Transaction Details</h3>
-              <button onClick={() => setDetailId(null)} className="text-slate-400 hover:text-slate-600">✕</button>
-            </div>
-            <div className="space-y-3 text-sm">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-lg bg-slate-50 p-3">
-                  <p className="text-xs text-slate-400 mb-1">Amount</p>
-                  <p className="font-semibold text-slate-900">{formatCurrency(detail.amount)}</p>
-                </div>
-                <div className="rounded-lg bg-slate-50 p-3">
-                  <p className="text-xs text-slate-400 mb-1">Status</p>
-                  <span className={cn("px-2 py-0.5 rounded-full text-xs font-medium border", getStatusColor(detail.status))}>
-                    {detail.status}
-                  </span>
-                </div>
-                <div className="rounded-lg bg-slate-50 p-3">
-                  <p className="text-xs text-slate-400 mb-1">Payment Method</p>
-                  <p className="font-medium text-slate-700">{detail.paymentMethod.replace(/_/g, " ")}</p>
-                </div>
-                <div className="rounded-lg bg-slate-50 p-3">
-                  <p className="text-xs text-slate-400 mb-1">Gateway</p>
-                  <p className="font-medium text-slate-700">{detail.gateway}</p>
-                </div>
-              </div>
-              {detail.failureReason && (
-                <div className="rounded-lg bg-red-50 border border-red-200 p-3">
-                  <p className="text-xs text-red-500 mb-1">Failure Reason</p>
-                  <p className="font-medium text-red-700">{detail.failureReason.replace(/_/g, " ")}</p>
-                  {detail.failureMessage && (
-                    <p className="text-xs text-red-600 mt-1">{detail.failureMessage}</p>
-                  )}
-                </div>
-              )}
-              {detail.customer && (
-                <div className="rounded-lg bg-slate-50 p-3">
-                  <p className="text-xs text-slate-400 mb-1">Customer</p>
-                  <p className="font-medium text-slate-700">{detail.customer.name}</p>
-                  <p className="text-xs text-slate-500">{detail.customer.email}</p>
-                </div>
-              )}
-              <div className="rounded-lg bg-slate-50 p-3">
-                <p className="text-xs text-slate-400 mb-1">Transaction ID</p>
-                <p className="font-mono text-xs text-slate-600 break-all">{detail.externalId}</p>
-              </div>
-            </div>
-            {detail.status !== "SUCCESS" && !detail.recoveryOpportunity && (
-              <button
-                onClick={() => { handleAnalyze(detail.id); setDetailId(null); }}
-                className="mt-5 w-full flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
-              >
-                <Sparkles className="h-4 w-4" />
-                Run AI Analysis
-              </button>
-            )}
-          </div>
-        </div>
-      )}
+      <AIAnalysisModal
+        opportunity={selectedOpportunity}
+        isOpen={modalOpen}
+        onClose={() => setModalOpen(false)}
+      />
     </div>
   );
 }
