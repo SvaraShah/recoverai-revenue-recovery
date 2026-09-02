@@ -95,7 +95,7 @@ The backend enforces 7 strict rules in `recoveryService.ts`:
   - Transactions with amount `> ₹25,000`
   - Forces `status = "PENDING_APPROVAL"` and `autoExecute = false`.
   - Requires manual merchant authorization (`Approve & Execute`).
-- **Rule 4: Confidence Threshold**: Confidence ratings below 50% prevent autonomous execution.
+- **Rule 4: Confidence Threshold**: Confidence ratings below 70% prevent autonomous execution.
 - **Rule 5: Customer Frequency Limit**: Customers with $\ge 6$ failed payments are stopped to prevent customer spam.
 - **Rule 6: Deduplication Lock**: Transactions already marked `RECOVERED` block further outreach actions.
 - **Rule 7: Escalation Policy**: Repeated failure attempts escalate opportunity to manual security review.

@@ -26,7 +26,7 @@ Every dollar figure, transaction count, and guardrail interception reported belo
     { "rule": "Fraud / Invalid Card", "count": 5 },
     { "rule": "Customer Frequency Limit", "count": 17 },
     { "rule": "High Value (>₹25k) Approval", "count": 9 },
-    { "rule": "Low Confidence (<50%)", "count": 12 }
+    { "rule": "Low Confidence (<70%)", "count": 12 }
   ],
   "escalatedToApproval": 21,
   "executionTimeMs": 68343
@@ -57,13 +57,13 @@ RecoverAI enforces 7 deterministic safety policy rules. During this 50-transacti
 [FRAUD & INVALID CARD]       █████ (5 stopped — FRAUD_SUSPECTED / INVALID_CARD)
 [CUSTOMER FREQUENCY CAP]     █████████████████ (17 stopped — ≥6 previous failures)
 [HIGH-VALUE APPROVAL (>25K)] █████████ (9 intercepted — requires human signature)
-[LOW CONFIDENCE (<50%)]      ████████████ (12 intercepted — AI confidence below threshold)
+[LOW CONFIDENCE (<70%)]      ████████████ (12 intercepted — AI confidence below threshold)
 ```
 
 1. **Fraud / Invalid Card Protection (Rule 2)**: **5 transactions stopped**. Prohibited from any retry or customer outreach. API returns HTTP 400 Bad Request if execution is forced.
 2. **Customer Outreach Frequency Cap (Rule 5)**: **17 transactions stopped**. Intercepted customers with $\ge 6$ previous failures to prevent outreach spam.
 3. **High-Value Transaction Threshold (Rule 3)**: **9 transactions intercepted**. Amount $> ₹25,000$ placed in `PENDING_APPROVAL` status. Requires explicit merchant authorization (`Approve & Execute`).
-4. **Low AI Confidence Threshold (Rule 4)**: **12 transactions intercepted**. Confidence rating below $50\%$ suspended for human review.
+4. **Low AI Confidence Threshold (Rule 4)**: **12 transactions intercepted**. Confidence rating below $70\%$ suspended for human review.
 
 ---
 

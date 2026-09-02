@@ -530,7 +530,7 @@ export const recoveryService = {
       "Max Retry Attempts": 0,
       "Customer Frequency Limit": 0,
       "High Value (>₹25k) Approval": 0,
-      "Low Confidence (<50%)": 0,
+      "Low Confidence (<70%)": 0,
     };
 
     // Get opportunities that are in identified/pending/recommended states
@@ -655,7 +655,7 @@ export const recoveryService = {
           targetState = "PENDING_APPROVAL";
           escalateReason = `Guardrail Check: Confidence (${normConf}%) below threshold`;
           escalatedRecoveries++;
-          guardrailCounts["Low Confidence (<50%)"]++;
+          guardrailCounts["Low Confidence (<70%)"]++;
         } else {
           eligibleTransactions++;
           checkAction = true;
