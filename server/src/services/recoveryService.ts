@@ -647,9 +647,13 @@ export const recoveryService = {
           guardrailCounts["High Value (>₹25k) Approval"]++;
         }
         // RULE 4: confidence check
-        else if (fullOpp.aiConfidence < (appSettings.confidenceThreshold * 100)) {
+        else if (
+          (fullOpp.aiConfidence <= 1 ? fullOpp.aiConfidence * 100 : fullOpp.aiConfidence) <
+          (appSettings.confidenceThreshold <= 1 ? appSettings.confidenceThreshold * 100 : appSettings.confidenceThreshold)
+        ) {
+          const normConf = Math.round(fullOpp.aiConfidence <= 1 ? fullOpp.aiConfidence * 100 : fullOpp.aiConfidence);
           targetState = "PENDING_APPROVAL";
-          escalateReason = `Guardrail Check: Confidence (${fullOpp.aiConfidence}%) below threshold`;
+          escalateReason = `Guardrail Check: Confidence (${normConf}%) below threshold`;
           escalatedRecoveries++;
           guardrailCounts["Low Confidence (<50%)"]++;
         } else {
