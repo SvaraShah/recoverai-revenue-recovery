@@ -92,6 +92,17 @@ function KpiCard({
   );
 }
 
+function getGreeting(): string {
+  const hour = new Date().getHours();
+  if (hour >= 5 && hour < 12) {
+    return "Good Morning, Admin 👋";
+  } else if (hour >= 12 && hour < 17) {
+    return "Good Afternoon, Admin 👋";
+  } else {
+    return "Good Evening, Admin 👋";
+  }
+}
+
 export default function OverviewPage() {
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState("all");
@@ -165,7 +176,7 @@ export default function OverviewPage() {
       {/* Top Greeting Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Good morning, Admin 👋</h1>
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">{getGreeting()}</h1>
           <p className="text-xs text-slate-500 font-medium mt-0.5">Here's what's happening with your revenue recovery today.</p>
         </div>
 
