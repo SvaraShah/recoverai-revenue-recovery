@@ -264,7 +264,7 @@ export default function OverviewPage() {
                     formatter={(val: any) => formatCurrency(Number(val))}
                     contentStyle={{ backgroundColor: "#0f172a", borderRadius: "12px", border: "none", color: "#fff", fontSize: "12px" }}
                   />
-                  <Area type="monotone" dataKey="recovered" name="Recovered Amount" stroke="#8b5cf6" fillOpacity={1} fill="url(#colorRec)" strokeWidth={2.5} />
+                  <Area type="monotone" dataKey="recovered" name="Recovered Amount" stroke="#8b5cf6" fillOpacity={1} fill="url(#colorRec)" strokeWidth={2.5} isAnimationActive={false} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>

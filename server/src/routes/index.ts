@@ -1,5 +1,6 @@
 import { Router, Request, Response } from "express";
 import { asyncHandler } from "../middleware/errorHandler";
+import { apiCache, clearApiCache } from "../middleware/cache";
 import { dashboardService } from "../services/dashboardService";
 import { transactionService } from "../services/transactionService";
 import { recoveryService } from "../services/recoveryService";
@@ -14,6 +15,7 @@ const router = Router();
 
 router.get(
   "/dashboard/overview",
+  apiCache(10),
   asyncHandler(async (_req, res) => {
     const data = await dashboardService.getOverview();
     res.json(data);
@@ -22,6 +24,7 @@ router.get(
 
 router.get(
   "/dashboard/summary",
+  apiCache(10),
   asyncHandler(async (_req, res) => {
     const data = await dashboardService.getOverview();
     res.json(data);
@@ -30,6 +33,7 @@ router.get(
 
 router.get(
   "/dashboard/trends",
+  apiCache(10),
   asyncHandler(async (req, res) => {
     const period = (req.query.period as string) || "30d";
     const data = await dashboardService.getTrends(period);
@@ -39,6 +43,7 @@ router.get(
 
 router.get(
   "/dashboard/recent-activity",
+  apiCache(10),
   asyncHandler(async (_req, res) => {
     const data = await dashboardService.getRecentActivity();
     res.json(data);
@@ -47,6 +52,7 @@ router.get(
 
 router.get(
   "/dashboard/failure-breakdown",
+  apiCache(10),
   asyncHandler(async (_req, res) => {
     const data = await dashboardService.getFailureBreakdown();
     res.json(data);
@@ -109,12 +115,14 @@ router.put(
   "/recovery/guardrails",
   asyncHandler(async (req, res) => {
     appSettings = { ...appSettings, ...req.body };
+    clearApiCache();
     res.json(appSettings);
   })
 );
 
 router.get(
   "/recovery/performance",
+  apiCache(10),
   asyncHandler(async (_req, res) => {
     const data = await recoveryService.getPerformanceMetrics();
     res.json(data);
@@ -123,6 +131,7 @@ router.get(
 
 router.get(
   "/recovery/audit-log",
+  apiCache(10),
   asyncHandler(async (_req, res) => {
     const data = await recoveryService.getAuditLogs();
     res.json(data);
@@ -131,6 +140,7 @@ router.get(
 
 router.get(
   "/recovery/batch-runs",
+  apiCache(10),
   asyncHandler(async (_req, res) => {
     const data = await recoveryService.getBatchRuns();
     res.json(data);
@@ -139,6 +149,7 @@ router.get(
 
 router.get(
   "/recovery/batch-runs/:id",
+  apiCache(10),
   asyncHandler(async (req, res) => {
     const data = await recoveryService.getBatchRunById(req.params.id as string);
     if (!data) return res.status(404).json({ message: "Batch run not found" });
@@ -149,6 +160,7 @@ router.get(
 router.post(
   "/recovery/batch-run",
   asyncHandler(async (req, res) => {
+    clearApiCache();
     const { batchSize, guardrailsEnabled, approvalRequired } = req.body;
     const data = await recoveryService.createBatchRun({
       batchSize: batchSize ? parseInt(batchSize) : 25,
