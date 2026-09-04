@@ -1,6 +1,7 @@
 import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import AppShell from "@/components/layout/AppShell";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 const OverviewPage = lazy(() => import("@/pages/Overview"));
 const TransactionsPage = lazy(() => import("@/pages/Transactions"));
@@ -22,20 +23,22 @@ function PageLoader() {
 function App() {
   return (
     <BrowserRouter>
-      <Suspense fallback={<PageLoader />}>
-        <Routes>
-          <Route element={<AppShell />}>
-            <Route path="/" element={<OverviewPage />} />
-            <Route path="/transactions" element={<TransactionsPage />} />
-            <Route path="/recovery" element={<RecoveryPage />} />
-            <Route path="/insights" element={<InsightsPage />} />
-            <Route path="/campaigns" element={<CampaignsPage />} />
-            <Route path="/analytics" element={<AnalyticsPage />} />
-            <Route path="/settings" element={<SettingsPage />} />
-            <Route path="/audit" element={<AuditLogPage />} />
-          </Route>
-        </Routes>
-      </Suspense>
+      <ErrorBoundary>
+        <Suspense fallback={<PageLoader />}>
+          <Routes>
+            <Route element={<AppShell />}>
+              <Route path="/" element={<OverviewPage />} />
+              <Route path="/transactions" element={<TransactionsPage />} />
+              <Route path="/recovery" element={<RecoveryPage />} />
+              <Route path="/insights" element={<InsightsPage />} />
+              <Route path="/campaigns" element={<CampaignsPage />} />
+              <Route path="/analytics" element={<AnalyticsPage />} />
+              <Route path="/settings" element={<SettingsPage />} />
+              <Route path="/audit" element={<AuditLogPage />} />
+            </Route>
+          </Routes>
+        </Suspense>
+      </ErrorBoundary>
     </BrowserRouter>
   );
 }

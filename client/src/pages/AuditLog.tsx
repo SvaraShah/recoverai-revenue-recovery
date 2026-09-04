@@ -3,6 +3,7 @@ import { recoveryApi } from "@/lib/api";
 import { formatDate, truncateId } from "@/lib/utils";
 import { Sparkles, ShieldAlert, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import ErrorState from "@/components/ErrorState";
 
 interface AuditLogEntry {
   id: string;
@@ -27,13 +28,30 @@ interface AuditLogEntry {
 }
 
 export default function AuditLogPage() {
-  const { data: logs, loading } = useFetch<AuditLogEntry[]>(
+  const {
+    data: logs,
+    loading,
+    error,
+    refetch,
+  } = useFetch<AuditLogEntry[]>(
     () => recoveryApi.getAuditLog(),
     []
   );
 
+  const safeLogs = Array.isArray(logs) ? logs : [];
+
+  if (error && safeLogs.length === 0) {
+    return (
+      <ErrorState
+        title="Failed to load audit ledger"
+        message={error}
+        onRetry={refetch}
+      />
+    );
+  }
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 select-none">
       {/* Header Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-slate-200 pb-3">
         <div>
@@ -44,7 +62,7 @@ export default function AuditLogPage() {
         </div>
         <div className="flex items-center gap-2">
           <span className="text-xs font-mono font-semibold text-slate-500 bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-lg">
-            {logs?.length || 0} Ledger Entries
+            {safeLogs.length} Ledger Entries
           </span>
         </div>
       </div>
@@ -64,22 +82,23 @@ export default function AuditLogPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {loading ? (
+              {loading && safeLogs.length === 0 ? (
                 [...Array(6)].map((_, i) => (
                   <tr key={i} className="animate-pulse">
                     <td colSpan={6} className="py-3.5 px-4"><div className="h-4 bg-slate-100 rounded" /></td>
                   </tr>
                 ))
-              ) : logs && logs.length > 0 ? (
-                logs.map((log) => {
-                  const isAi = log.action === "AI_ANALYSIS";
-                  const isStopped = log.action === "RECOVERY_STOPPED" || log.details?.policyOverride;
+              ) : safeLogs.length > 0 ? (
+                safeLogs.map((log) => {
+                  const actionStr = log.action || "LOG_ENTRY";
+                  const isAi = actionStr === "AI_ANALYSIS";
+                  const isStopped = actionStr === "RECOVERY_STOPPED" || log.details?.policyOverride;
 
                   return (
-                    <tr key={log.id} className="hover:bg-slate-50/80 transition-colors">
+                    <tr key={log.id || Math.random().toString()} className="hover:bg-slate-50/80 transition-colors">
                       {/* Timestamp */}
                       <td className="py-3 px-4 font-mono text-[11px] text-slate-400 whitespace-nowrap">
-                        {formatDate(log.timestamp)}
+                        {log.timestamp ? formatDate(log.timestamp) : "Recently"}
                       </td>
 
                       {/* Event / Action */}
@@ -91,13 +110,13 @@ export default function AuditLogPage() {
                           "bg-slate-100 text-slate-700 border-slate-200"
                         )}>
                           {isStopped ? <ShieldAlert className="h-3 w-3" /> : isAi ? <Sparkles className="h-3 w-3 text-indigo-600" /> : <CheckCircle2 className="h-3 w-3 text-slate-500" />}
-                          <span>{log.action.replace(/_/g, " ")}</span>
+                          <span>{actionStr.replace(/_/g, " ")}</span>
                         </span>
                       </td>
 
                       {/* Entity / Transaction */}
                       <td className="py-3 px-4 font-mono text-[11px] text-slate-700 font-semibold">
-                        {log.details?.transactionId ? `#${truncateId(log.details.transactionId)}` : truncateId(log.entityId)}
+                        {log.details?.transactionId ? `#${truncateId(log.details.transactionId)}` : log.entityId ? truncateId(log.entityId) : "N/A"}
                       </td>
 
                       {/* State Transition */}

@@ -14,6 +14,7 @@ import { cn, formatCurrency, formatDate } from "@/lib/utils";
 import { useFetch } from "@/hooks/useFetch";
 import { campaignsApi } from "@/lib/api";
 import type { RecoveryCampaign, CampaignType, CampaignStatus } from "@/types";
+import ErrorState from "@/components/ErrorState";
 
 const typeIcons: Record<string, { icon: React.ElementType; color: string }> = {
   SMART_RETRY: { icon: RefreshCw, color: "bg-blue-50 text-blue-700 border-blue-200" },
@@ -27,7 +28,12 @@ export default function CampaignsPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [newCampaign, setNewCampaign] = useState({ name: "", type: "SMART_RETRY" as CampaignType, description: "" });
 
-  const { data: campaigns, loading, refetch } = useFetch<(RecoveryCampaign & { _count?: { opportunities: number } })[]>(
+  const {
+    data: campaigns,
+    loading,
+    error,
+    refetch,
+  } = useFetch<(RecoveryCampaign & { _count?: { opportunities: number } })[]>(
     () => campaignsApi.getAll(),
     []
   );
@@ -53,8 +59,20 @@ export default function CampaignsPage() {
     }
   };
 
+  const safeCampaigns = Array.isArray(campaigns) ? campaigns : [];
+
+  if (error && safeCampaigns.length === 0) {
+    return (
+      <ErrorState
+        title="Failed to load campaigns"
+        message={error}
+        onRetry={refetch}
+      />
+    );
+  }
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 select-none">
       {/* Header Banner */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex items-center gap-3">
@@ -78,20 +96,21 @@ export default function CampaignsPage() {
       </div>
 
       {/* Campaign Cards Grid */}
-      {loading ? (
+      {loading && safeCampaigns.length === 0 ? (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           {[...Array(4)].map((_, i) => (
             <div key={i} className="h-60 rounded-2xl border border-slate-200 bg-white animate-pulse" />
           ))}
         </div>
-      ) : campaigns && campaigns.length > 0 ? (
+      ) : safeCampaigns.length > 0 ? (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          {campaigns.map((campaign) => {
-            const typeInfo = typeIcons[campaign.type] || typeIcons.MIXED;
+          {safeCampaigns.map((campaign) => {
+            const typeKey = campaign.type || "MIXED";
+            const typeInfo = typeIcons[typeKey] || typeIcons.MIXED;
             const TypeIcon = typeInfo.icon;
-            const progressPct = campaign.targetCount > 0
-              ? Math.round((campaign.recoveredCount / campaign.targetCount) * 100)
-              : 0;
+            const target = Number(campaign.targetCount) || 0;
+            const recovered = Number(campaign.recoveredCount) || 0;
+            const progressPct = target > 0 ? Math.round((recovered / target) * 100) : 0;
 
             return (
               <div key={campaign.id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-2xs hover:shadow-sm transition-all space-y-4">
@@ -102,8 +121,8 @@ export default function CampaignsPage() {
                       <TypeIcon className="h-4 w-4" />
                     </div>
                     <div>
-                      <h3 className="text-sm font-bold text-slate-900">{campaign.name}</h3>
-                      <p className="text-[11px] text-slate-400 font-medium">Type: {campaign.type.replace(/_/g, " ")}</p>
+                      <h3 className="text-sm font-bold text-slate-900">{campaign.name || "Campaign"}</h3>
+                      <p className="text-[11px] text-slate-400 font-medium">Type: {typeKey.replace(/_/g, " ")}</p>
                     </div>
                   </div>
                   <span className={cn(
@@ -112,7 +131,7 @@ export default function CampaignsPage() {
                     campaign.status === "PAUSED" ? "bg-amber-50 text-amber-700 border-amber-200" :
                     "bg-slate-100 text-slate-600 border-slate-200"
                   )}>
-                    {campaign.status}
+                    {campaign.status || "DRAFT"}
                   </span>
                 </div>
 
@@ -135,22 +154,22 @@ export default function CampaignsPage() {
                 <div className="grid grid-cols-3 gap-2 text-center text-xs">
                   <div className="rounded-xl bg-slate-50 border border-slate-200 p-2.5">
                     <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Targets</p>
-                    <p className="font-bold text-slate-900 mt-0.5">{campaign.targetCount}</p>
+                    <p className="font-bold text-slate-900 mt-0.5">{target}</p>
                   </div>
                   <div className="rounded-xl bg-slate-50 border border-slate-200 p-2.5">
                     <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Recovered</p>
-                    <p className="font-bold text-emerald-700 mt-0.5">{campaign.recoveredCount}</p>
+                    <p className="font-bold text-emerald-700 mt-0.5">{recovered}</p>
                   </div>
                   <div className="rounded-xl bg-slate-50 border border-slate-200 p-2.5">
                     <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Revenue</p>
-                    <p className="font-bold text-slate-900 mt-0.5">{formatCurrency(campaign.recoveredAmount)}</p>
+                    <p className="font-bold text-slate-900 mt-0.5">{formatCurrency(Number(campaign.recoveredAmount) || 0)}</p>
                   </div>
                 </div>
 
                 {/* Actions */}
                 <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
                   <span className="text-[11px] text-slate-400 font-medium">
-                    Created {formatDate(campaign.createdAt)}
+                    {campaign.createdAt ? `Created ${formatDate(campaign.createdAt)}` : "Recently Created"}
                   </span>
                   {campaign.status === "ACTIVE" ? (
                     <button

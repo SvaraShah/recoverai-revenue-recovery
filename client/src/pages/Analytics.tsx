@@ -4,6 +4,7 @@ import { useFetch } from "@/hooks/useFetch";
 import { analyticsApi, recoveryApi } from "@/lib/api";
 import type { AnalyticsData } from "@/types";
 import { BarChart3, Zap } from "lucide-react";
+import ErrorState from "@/components/ErrorState";
 
 const periods = [
   { value: "7d", label: "7 Days" },
@@ -14,44 +15,78 @@ const periods = [
 export default function AnalyticsPage() {
   const [period, setPeriod] = useState("30d");
 
-  const { data: analytics, loading: loadingAnalytics } = useFetch<AnalyticsData>(
+  const {
+    data: analytics,
+    loading: loadingAnalytics,
+    error: errorAnalytics,
+    refetch: refetchAnalytics,
+  } = useFetch<AnalyticsData>(
     () => analyticsApi.getFullAnalytics(period),
     [period]
   );
 
-  const { data: performance, loading: loadingPerformance } = useFetch<any>(
+  const {
+    data: performance,
+    loading: loadingPerformance,
+    error: errorPerformance,
+    refetch: refetchPerformance,
+  } = useFetch<any>(
     () => recoveryApi.getPerformance(),
     [period]
   );
 
-  if (loadingAnalytics || loadingPerformance || !analytics || !performance) {
+  const handleRetryAll = () => {
+    refetchAnalytics();
+    refetchPerformance();
+  };
+
+  // If there's an error and no cached data available, show ErrorState with Retry button
+  if ((errorAnalytics || errorPerformance) && !analytics && !performance) {
     return (
-      <div className="space-y-5">
-        <div className="h-10 w-64 rounded-xl bg-slate-200 animate-pulse" />
+      <ErrorState
+        title="Unable to load analytics telemetry"
+        message={errorAnalytics || errorPerformance || "An error occurred while fetching metrics."}
+        onRetry={handleRetryAll}
+      />
+    );
+  }
+
+  // Loading state skeleton
+  if ((loadingAnalytics || loadingPerformance) && (!analytics || !performance)) {
+    return (
+      <div className="space-y-5 select-none">
+        <div className="h-14 w-full rounded-2xl bg-slate-100 animate-pulse" />
+        <div className="h-44 w-full rounded-2xl bg-slate-100 animate-pulse" />
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-          {[...Array(4)].map((_, i) => (
-            <div key={i} className="h-72 rounded-2xl border border-slate-200 bg-white animate-pulse" />
-          ))}
+          <div className="h-60 rounded-2xl bg-slate-100 animate-pulse" />
+          <div className="h-60 rounded-2xl bg-slate-100 animate-pulse" />
         </div>
       </div>
     );
   }
 
-  const realizationRate = performance.totalExpectedRecovery > 0
-    ? Math.round((performance.totalRecoveredRevenue / performance.totalExpectedRecovery) * 100)
-    : 0;
+  const safePerformance = (performance || {}) as Record<string, any>;
+  const safeAnalytics = (analytics || {}) as Partial<AnalyticsData>;
+
+  const totalExp = Number(safePerformance.totalExpectedRecovery) || 0;
+  const totalRec = Number(safePerformance.totalRecoveredRevenue) || 0;
+  const realizationRate = totalExp > 0 ? Math.round((totalRec / totalExp) * 100) : 0;
 
   // Funnel steps mapped to live performance API metrics
   const funnelSteps = [
-    { label: "Failed Payments", value: performance.failedPaymentsCount ?? performance.totalTransactions ?? 0, color: "bg-red-500 text-white" },
-    { label: "AI Analyzed", value: performance.aiAnalyzedCount ?? 0, color: "bg-purple-600 text-white" },
-    { label: "Recovery Opportunities", value: performance.opportunitiesCount ?? 0, color: "bg-indigo-600 text-white" },
-    { label: "Outreach Dispatched", value: performance.outreachDispatchedCount ?? 0, color: "bg-blue-600 text-white" },
-    { label: "Revenue Recovered", value: performance.recoveredCount ?? 0, color: "bg-emerald-600 text-white" },
+    { label: "Failed Payments", value: safePerformance.failedPaymentsCount ?? safePerformance.totalTransactions ?? 0, color: "bg-red-500 text-white" },
+    { label: "AI Analyzed", value: safePerformance.aiAnalyzedCount ?? 0, color: "bg-purple-600 text-white" },
+    { label: "Recovery Opportunities", value: safePerformance.opportunitiesCount ?? 0, color: "bg-indigo-600 text-white" },
+    { label: "Outreach Dispatched", value: safePerformance.outreachDispatchedCount ?? 0, color: "bg-blue-600 text-white" },
+    { label: "Revenue Recovered", value: safePerformance.recoveredCount ?? 0, color: "bg-emerald-600 text-white" },
   ];
 
+  const recoveryByMethod = Array.isArray(safeAnalytics.recoveryByMethod)
+    ? safeAnalytics.recoveryByMethod
+    : [];
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 select-none">
       {/* Header Controls */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex items-center gap-3">
@@ -116,11 +151,11 @@ export default function AnalyticsPage() {
           <div className="grid grid-cols-2 gap-3 text-center text-xs">
             <div className="rounded-xl bg-slate-50 border border-slate-200 p-3">
               <span className="text-slate-400 font-semibold uppercase text-[10px]">Expected Recovery</span>
-              <p className="text-base font-bold text-slate-900 mt-0.5">{formatCurrency(performance.totalExpectedRecovery)}</p>
+              <p className="text-base font-bold text-slate-900 mt-0.5">{formatCurrency(totalExp)}</p>
             </div>
             <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-3">
               <span className="text-emerald-700 font-semibold uppercase text-[10px]">Realized Recovered</span>
-              <p className="text-base font-bold text-emerald-800 mt-0.5">{formatCurrency(performance.totalRecoveredRevenue)}</p>
+              <p className="text-base font-bold text-emerald-800 mt-0.5">{formatCurrency(totalRec)}</p>
             </div>
           </div>
         </div>
@@ -132,17 +167,21 @@ export default function AnalyticsPage() {
             <p className="text-xs text-slate-500">Recovery rate by payment rail (UPI, Credit Card, Net Banking)</p>
           </div>
           <div className="space-y-3 text-xs">
-            {analytics.recoveryByMethod?.map((pm) => (
-              <div key={pm.method} className="space-y-1">
-                <div className="flex justify-between font-semibold">
-                  <span className="text-slate-800">{pm.method.replace(/_/g, " ")}</span>
-                  <span className="text-violet-700 font-bold">{pm.rate}% ({formatCurrency(pm.amount)})</span>
+            {recoveryByMethod.length > 0 ? (
+              recoveryByMethod.map((pm: any) => (
+                <div key={pm.method} className="space-y-1">
+                  <div className="flex justify-between font-semibold">
+                    <span className="text-slate-800">{pm.method?.replace(/_/g, " ") || pm.method}</span>
+                    <span className="text-violet-700 font-bold">{pm.rate || 0}% ({formatCurrency(pm.amount || 0)})</span>
+                  </div>
+                  <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+                    <div className="h-full bg-violet-600 rounded-full" style={{ width: `${Math.min(100, (pm.rate || 0) * 1.2)}%` }} />
+                  </div>
                 </div>
-                <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
-                  <div className="h-full bg-violet-600 rounded-full" style={{ width: `${Math.min(100, pm.rate * 1.2)}%` }} />
-                </div>
-              </div>
-            ))}
+              ))
+            ) : (
+              <p className="text-xs text-slate-400 py-4 text-center">No payment method breakdown available</p>
+            )}
           </div>
         </div>
       </div>
